@@ -127,7 +127,7 @@ controllerManager:
     # -- PriorityClassName (https://kubernetes.io/docs/concepts/scheduling-eviction/pod-priority-preemption/#pod-priority) for the controller-manager pod.
     priorityClassName: ""
   # -- Image repository for the controller-manager pod.
-  imageName: "ghcr.io/liqotech/liqo-controller-manager"
+  imageName: "ghcr.io/castai/liqo-controller-manager"
   config:
     # -- Percentage of available cluster resources that you are willing to share with foreign clusters.
     resourceSharingPercentage: 30
@@ -178,7 +178,7 @@ route:
     # -- PriorityClassName (https://kubernetes.io/docs/concepts/scheduling-eviction/pod-priority-preemption/#pod-priority) for the route pod.
     priorityClassName: ""
   # -- Image repository for the route pod.
-  imageName: "ghcr.io/liqotech/liqonet"
+  imageName: "ghcr.io/castai/liqonet"
   # -- Extra tolerations for the route daemonset.
   tolerations: []
 
@@ -202,7 +202,7 @@ gateway:
     # -- PriorityClassName (https://kubernetes.io/docs/concepts/scheduling-eviction/pod-priority-preemption/#pod-priority) for the network gateway pod.
     priorityClassName: ""
   # -- Image repository for the network gateway pod.
-  imageName: "ghcr.io/liqotech/liqonet"
+  imageName: "ghcr.io/castai/liqonet"
   service:
     # -- Kubernetes service to be used to expose the network gateway pod.
     # If you plan to use liqo over the Internet, consider to change this field to "LoadBalancer".
@@ -279,7 +279,7 @@ networkManager:
     # -- PriorityClassName (https://kubernetes.io/docs/concepts/scheduling-eviction/pod-priority-preemption/#pod-priority) for the networkManager pod.
     priorityClassName: ""
   # -- Image repository for the networkManager pod.
-  imageName: "ghcr.io/liqotech/liqonet"
+  imageName: "ghcr.io/castai/liqonet"
   config:
     # -- The subnet used by the pods in your cluster, in CIDR notation (e.g., 10.0.0.0/16).
     podCIDR: ""
@@ -311,7 +311,7 @@ crdReplicator:
     # -- PriorityClassName (https://kubernetes.io/docs/concepts/scheduling-eviction/pod-priority-preemption/#pod-priority) for the crdReplicator pod.
     priorityClassName: ""
   # -- Image repository for the crdReplicator pod.
-  imageName: "ghcr.io/liqotech/crd-replicator"
+  imageName: "ghcr.io/castai/crd-replicator"
   metrics:
     podMonitor:
       # -- Enable/Disable the creation of a Prometheus podmonitor. Turn on this flag when the Prometheus Operator
@@ -341,7 +341,7 @@ discovery:
     # -- PriorityClassName (https://kubernetes.io/docs/concepts/scheduling-eviction/pod-priority-preemption/#pod-priority) for the discovery pod.
     priorityClassName: ""
   # -- Image repository for the discovery pod.
-  imageName: "ghcr.io/liqotech/discovery"
+  imageName: "ghcr.io/castai/discovery"
   config:
     # -- Specify an unique ID (must be a valid uuidv4) for your cluster, instead of letting helm generate it automatically at install time.
     # You can generate it using the command: `uuidgen`
@@ -384,10 +384,10 @@ auth:
     # -- PriorityClassName (https://kubernetes.io/docs/concepts/scheduling-eviction/pod-priority-preemption/#pod-priority) for the auth pod.
     priorityClassName: ""
   # -- Image repository for the auth pod.
-  imageName: "ghcr.io/liqotech/auth-service"
+  imageName: "ghcr.io/castai/auth-service"
   initContainer:
     # -- Image repository for the init container of the auth pod.
-    imageName: "ghcr.io/liqotech/cert-creator"
+    imageName: "ghcr.io/castai/cert-creator"
   service:
     # -- Kubernetes service used to expose the Authentication Service.
     # If you are exposing this service with an Ingress, you can change it to ClusterIP;
@@ -459,10 +459,10 @@ metricAgent:
     # -- PriorityClassName (https://kubernetes.io/docs/concepts/scheduling-eviction/pod-priority-preemption/#pod-priority) for the metricAgent pod.
     priorityClassName: ""
   # -- Image repository for the metricAgent pod.
-  imageName: "ghcr.io/liqotech/metric-agent"
+  imageName: "ghcr.io/castai/metric-agent"
   initContainer:
     # --Image repository for the authentication init container for the metricAgent pod.
-    imageName: "ghcr.io/liqotech/cert-creator"
+    imageName: "ghcr.io/castai/cert-creator"
 
 telemetry:
   # -- Enable/Disable the telemetry collector.
@@ -479,7 +479,7 @@ telemetry:
       limits: {}
       requests: {}
   # -- Image repository for the telemetry pod.
-  imageName: "ghcr.io/liqotech/telemetry"
+  imageName: "ghcr.io/castai/telemetry"
   config:
     # -- Set the schedule of the telemetry collector CronJob. Consider setting this value on ArgoCD deployments to avoid randomization.
     schedule: ""
@@ -496,7 +496,7 @@ webhook:
 
 virtualKubelet:
   # -- Image repository for the virtual kubelet.
-  imageName: "ghcr.io/liqotech/virtual-kubelet"
+  imageName: "ghcr.io/castai/virtual-kubelet"
   # Additional values that are added to virtual kubelet deployments and pods.
   extra:
     # -- Annotations for the virtual kubelet pod.
@@ -546,7 +546,7 @@ uninstaller:
       limits: {}
       requests: {}
   # -- Image repository for the uninstaller pod.
-  imageName: "ghcr.io/liqotech/uninstaller"
+  imageName: "ghcr.io/castai/uninstaller"
 
 proxy:
   pod:
@@ -563,7 +563,7 @@ proxy:
     # -- PriorityClassName (https://kubernetes.io/docs/concepts/scheduling-eviction/pod-priority-preemption/#pod-priority) for the proxy pod.
     priorityClassName: ""
   # -- Image repository for the proxy pod.
-  imageName: "ghcr.io/liqotech/proxy"
+  imageName: "ghcr.io/castai/proxy"
   service:
     type: "ClusterIP"
     annotations: {}
@@ -647,12 +647,12 @@ offloading:
       enable: true
       # -- Labels for the node selector.
       labels:
-        liqo.io/type: virtual-node
+        omni.cast.ai/type: virtual-node
     # -- Tolerations for the runtime class.
     tolerations:
       enable: true
       # -- Tolerations for the tolerations.
       tolerations:
-      - key: virtual-node.liqo.io/not-allowed
+      - key: virtual-node.omni.cast.ai/not-allowed
         operator: Exists
         effect: NoExecute
