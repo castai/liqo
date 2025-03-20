@@ -13,6 +13,17 @@ entries:
     - https://github.com/castai/liqo/releases/download/v0.10.4/liqo-v0.10.4.tgz
     version: v0.10.4
   - apiVersion: v2
+    appVersion: v0.10.3-6
+    created: "2025-03-20T09:40:46.56066435Z"
+    description: A Helm chart for Liqo
+    digest: 954ce27eecee0a78d8e3b19101ad406c9280a1ce4696132f8c00f596d8fe7935
+    icon: https://liqo.io/imgs/favicon.svg
+    name: liqo
+    type: application
+    urls:
+    - https://github.com/castai/liqo/releases/download/v0.10.3-6/liqo-v0.10.3-6.tgz
+    version: v0.10.3-6
+  - apiVersion: v2
     appVersion: v0.10.3-5
     created: "2025-03-20T09:06:17.386990469Z"
     description: A Helm chart for Liqo
@@ -56,4 +67,4 @@ entries:
     urls:
     - https://github.com/castai/liqo/releases/download/v0.10.3-2/liqo-v0.10.3-2.tgz
     version: v0.10.3-2
-generated: "2025-03-20T09:06:17.387009956Z"
+generated: "2025-03-20T09:40:46.560699075Z"
