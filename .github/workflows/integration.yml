@@ -325,6 +325,3 @@ jobs:
           allowUpdates: true
           tag: ${{ needs.configure.outputs.commit-ref }}
           name: ${{ needs.configure.outputs.commit-ref }}
-
-      - name: Update new version in krew-index
-        uses: rajatjindal/krew-release-bot@v0.0.47
