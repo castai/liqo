@@ -237,7 +237,7 @@ func (vxlan *VxlanDevice) enableRPFilter() error {
 // GenerateVxlanMac generate VXLAN MAC address.
 func GenerateVxlanMac(nodename string) (net.HardwareAddr, error) {
 	hasher := sha256.New()
-	_, err := hasher.Write([]byte("liqo-" + nodename))
+	_, err := hasher.Write([]byte("omni-" + nodename))
 	if err != nil {
 		return nil, err
 	}
