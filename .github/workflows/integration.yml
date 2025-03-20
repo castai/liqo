@@ -322,7 +322,7 @@ jobs:
       - uses: ncipollo/release-action@v1
         with:
           artifacts: "./liqoctl/**/*"
-          token: ${{ secrets.CI_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
           allowUpdates: true
           tag: ${{ needs.configure.outputs.commit-ref }}
           name: ${{ needs.configure.outputs.commit-ref }}
