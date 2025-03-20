@@ -298,7 +298,7 @@ jobs:
         with:
           artifacts: ".cr-release-packages/*"
           generateReleaseNotes: true
-          token: ${{ secrets.CI_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
           allowUpdates: true
           tag: ${{ needs.configure.outputs.commit-ref }}
           name: ${{ needs.configure.outputs.commit-ref }}
