@@ -96,7 +96,7 @@ func getVirtualNodeName(fc *discoveryv1alpha1.ForeignCluster,
 	case resourceOffer.Spec.NodeNamePrefix != "":
 		return fmt.Sprintf("%s-%s", resourceOffer.Spec.NodeNamePrefix, fc.Spec.ClusterIdentity.ClusterName)
 	default:
-		return fmt.Sprintf("liqo-%s", fc.Spec.ClusterIdentity.ClusterName)
+		return fmt.Sprintf("omni-%s", fc.Spec.ClusterIdentity.ClusterName)
 	}
 }
 
