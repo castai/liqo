@@ -258,7 +258,7 @@ jobs:
         id: last-release
         with:
           repository: ${{ github.repository }}
-          excludes: prerelease, draft
+          excludes: draft
 
       - name: Configure Git
         run: |
@@ -302,7 +302,6 @@ jobs:
           allowUpdates: true
           tag: ${{ needs.configure.outputs.commit-ref }}
           name: ${{ needs.configure.outputs.commit-ref }}
-          prerelease: ${{ steps.semver_parser.outputs.prerelease != '' }}
 
       - name: Update Helm index
         run: |
@@ -326,7 +325,6 @@ jobs:
           allowUpdates: true
           tag: ${{ needs.configure.outputs.commit-ref }}
           name: ${{ needs.configure.outputs.commit-ref }}
-          prerelease: ${{ steps.semver_parser.outputs.prerelease != '' }}
 
       - name: Update new version in krew-index
         uses: rajatjindal/krew-release-bot@v0.0.47
