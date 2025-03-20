@@ -1,0 +1,15 @@
+apiVersion: v1
+entries:
+  liqo:
+  - apiVersion: v2
+    appVersion: v0.10.3-2
+    created: "2025-03-20T07:18:16.378592062Z"
+    description: A Helm chart for Liqo
+    digest: 881ef6909c50dfdc7c6bf50603c361cca3ff08afbeddbf9c380046a2e831d273
+    icon: https://liqo.io/imgs/favicon.svg
+    name: liqo
+    type: application
+    urls:
+    - https://github.com/castai/liqo/releases/download/v0.10.3-2/liqo-v0.10.3-2.tgz
+    version: v0.10.3-2
+generated: "2025-03-20T07:18:16.37860137Z"
