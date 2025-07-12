@@ -119,11 +119,11 @@ networking:
       nodeAffinity:
         requiredDuringSchedulingIgnoredDuringExecution:
           nodeSelectorTerms:
-          - matchExpressions:
-            - key: liqo.io/type
-              operator: NotIn
-              values:
-              - virtual-node
+            - matchExpressions:
+                - key: liqo.io/type
+                  operator: NotIn
+                  values:
+                    - virtual-node
     # -- Extra tolerations for the fabric pod.
     tolerations: []
     config:
@@ -229,9 +229,9 @@ offloading:
       enabled: true
       # -- Tolerations for the tolerations.
       tolerations:
-      - key: virtual-node.omni.cast.ai/not-allowed
-        operator: Exists
-        effect: NoExecute
+        - key: virtual-node.omni.cast.ai/not-allowed
+          operator: Exists
+          effect: NoExecute
   reflection:
     skip:
       # -- List of labels that must not be reflected on remote clusters.
@@ -536,8 +536,7 @@ discovery:
     clusterID: ""
     # -- A set of labels that characterizes the local cluster when exposed remotely as a virtual node.
     # It is suggested to specify the distinguishing characteristics that may be used to decide whether to offload pods on this cluster.
-    clusterLabels:
-      {}
+    clusterLabels: {}
       # topology.kubernetes.io/zone: us-east-1
       # liqo.io/provider: your-provider
 
