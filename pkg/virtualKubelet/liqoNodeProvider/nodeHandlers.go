@@ -17,6 +17,7 @@ package liqonodeprovider
 import (
 	"context"
 	"fmt"
+	"os"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -29,21 +30,35 @@ import (
 // It is meant to be used as the error handler of the virtual kubelet node controller.
 func (p *LiqoNodeProvider) HandleNodeStatusUpdateError(ctx context.Context, _ error) error {
 	klog.Info("node setting up")
+	newNode := p.GetNode().DeepCopy()
+
+	klog.Infof("Restart check")
+	if newNode == nil || newNode.GetName() == "" {
+		klog.Errorf("Restarting the pod")
+		if newNode == nil {
+			klog.Errorf("newNode is nil")
+		} else if newNode.GetName() == "" {
+			klog.Errorf("newNode.Name is empty")
+		}
+		klog.Flush() // Force flush before exit
+		os.Exit(1)
+	}
+
+	newNode.ResourceVersion = ""
 
 	if p.IsTerminating() {
 		// This avoids the re-creation of terminated nodes.
-		klog.V(4).Info("skipping: node is in terminating phase")
+		klog.Info("skipping: node is in terminating phase")
 		return nil
 	}
 
-	newNode := p.GetNode().DeepCopy()
-	newNode.ResourceVersion = ""
+	klog.Infof("attempting to get node: %s", newNode.GetName())
 
 	oldNode, err := p.localClient.CoreV1().Nodes().Get(ctx, newNode.GetName(), metav1.GetOptions{})
 	switch {
 	case apierrors.IsNotFound(err):
-		err := p.createNode(ctx, newNode)
-		if err != nil {
+		klog.Info("node not found, creating new node")
+		if err := p.createNode(ctx, newNode); err != nil {
 			return fmt.Errorf("enforcing the Node: %w", err)
 		}
 		return nil
@@ -52,13 +67,14 @@ func (p *LiqoNodeProvider) HandleNodeStatusUpdateError(ctx context.Context, _ er
 		return err
 	}
 
+	klog.Info("node exists, updating status")
 	oldNode.Status = newNode.Status
 	if _, err = p.localClient.CoreV1().Nodes().UpdateStatus(ctx, oldNode, metav1.UpdateOptions{}); err != nil {
 		klog.Errorf("updating the status of node %q: %v", oldNode.GetName(), err)
 		return err
 	}
 
-	klog.V(4).Infof("Status of node %q correctly updated", oldNode.GetName())
+	klog.Infof("Status of node %q correctly updated", oldNode.GetName())
 	return nil
 }
 
