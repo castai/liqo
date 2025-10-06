@@ -19,6 +19,7 @@ import (
 	"errors"
 	"reflect"
 	"strconv"
+	"time"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -36,11 +37,16 @@ import (
 
 func (p *LiqoNodeProvider) reconcileNodeFromNode(_ watch.Event) error {
 	// enforce the node to be the same as the one we are managing
-	return p.updateNode()
+	p.updateMutex.Lock()
+	node := p.forgeNodeStatus()
+	p.updateMutex.Unlock()
+	p.updateNode(node)
+	return nil
 }
 
 func (p *LiqoNodeProvider) reconcileNodeFromVirtualNode(event watch.Event) error {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 	var virtualNode offloadingv1beta1.VirtualNode
 	unstruct, ok := event.Object.(*unstructured.Unstructured)
 	if !ok {
@@ -71,15 +77,14 @@ func (p *LiqoNodeProvider) reconcileNodeFromForeignCluster(event watch.Event) er
 	}
 
 	if event.Type == watch.Deleted {
-		p.updateMutex.Lock()
-		defer p.updateMutex.Unlock()
 		klog.Infof("foreigncluster %v deleted", fc.Name)
+		p.updateMutex.Lock()
 		p.networkReady = false
-		err := p.updateNode()
-		if err != nil {
-			klog.Error(err)
-		}
-		return err
+		node := p.forgeNodeStatus()
+		p.updateMutex.Unlock()
+
+		p.updateNode(node)
+		return nil
 	}
 
 	if err := p.updateFromForeignCluster(&fc); err != nil {
@@ -92,9 +97,6 @@ func (p *LiqoNodeProvider) reconcileNodeFromForeignCluster(event watch.Event) er
 // updateFromVirtualNode gets and updates the node status accordingly.
 func (p *LiqoNodeProvider) updateFromVirtualNode(ctx context.Context,
 	virtualNode *offloadingv1beta1.VirtualNode) error {
-	p.updateMutex.Lock()
-	defer p.updateMutex.Unlock()
-
 	lbls := virtualNode.Spec.Labels
 	if lbls == nil {
 		lbls = map[string]string{}
@@ -128,6 +130,7 @@ func (p *LiqoNodeProvider) updateFromVirtualNode(ctx context.Context,
 		return err
 	}
 
+	p.updateMutex.Lock()
 	if p.node.Status.Capacity == nil {
 		p.node.Status.Capacity = v1.ResourceList{}
 	}
@@ -142,19 +145,36 @@ func (p *LiqoNodeProvider) updateFromVirtualNode(ctx context.Context,
 	p.node.Status.Images = []v1.ContainerImage{}
 	p.node.Status.Images = append(p.node.Status.Images, virtualNode.Spec.Images...)
 
-	return p.updateNode()
+	node := p.forgeNodeStatus()
+	p.updateMutex.Unlock()
+
+	p.updateNode(node)
+	return nil
 }
 
 func (p *LiqoNodeProvider) updateFromForeignCluster(foreigncluster *liqov1beta1.ForeignCluster) error {
 	p.updateMutex.Lock()
-	defer p.updateMutex.Unlock()
 
 	p.networkModuleEnabled = fcutils.IsNetworkingModuleEnabled(foreigncluster)
 	p.networkReady = fcutils.IsNetworkingEstablished(foreigncluster)
-	return p.updateNode()
+
+	node := p.forgeNodeStatus()
+	p.updateMutex.Unlock()
+
+	p.updateNode(node)
+	return nil
 }
 
-func (p *LiqoNodeProvider) updateNode() error {
+func (p *LiqoNodeProvider) updateNode(node *v1.Node) {
+	klog.Info("Updating node")
+	start := time.Now()
+	defer func() {
+		klog.Info("Node updated in ", time.Since(start))
+	}()
+	p.onNodeChangeCallback(node)
+}
+
+func (p *LiqoNodeProvider) forgeNodeStatus() *v1.Node {
 	resourcesReady := areResourcesReady(p.node.Status.Allocatable)
 	networkReady := p.networkReady || !p.checkNetworkStatus || !p.networkModuleEnabled
 
@@ -170,8 +190,7 @@ func (p *LiqoNodeProvider) updateNode() error {
 
 	p.node.Status.Addresses = []v1.NodeAddress{{Type: v1.NodeInternalIP, Address: p.nodeIP}}
 
-	p.onNodeChangeCallback(p.node.DeepCopy())
-	return nil
+	return p.node.DeepCopy()
 }
 
 // areResourcesReady returns true if both cpu and memory are more than zero.
@@ -198,9 +217,13 @@ func (p *LiqoNodeProvider) patchLabels(ctx context.Context, labels map[string]st
 		labels = map[string]string{}
 	}
 
+	p.updateMutex.RLock()
+	lastAppliedLabels := p.lastAppliedLabels
+	p.updateMutex.RUnlock()
+
 	if err := p.patchNode(ctx, func(node *v1.Node) error {
 		nodeLabels := node.GetLabels()
-		nodeLabels = maps.Sub(nodeLabels, p.lastAppliedLabels)
+		nodeLabels = maps.Sub(nodeLabels, lastAppliedLabels)
 		nodeLabels = maps.Merge(nodeLabels, labels)
 		node.Labels = nodeLabels
 		return nil
@@ -209,7 +232,9 @@ func (p *LiqoNodeProvider) patchLabels(ctx context.Context, labels map[string]st
 		return err
 	}
 
+	p.updateMutex.Lock()
 	p.lastAppliedLabels = labels
+	p.updateMutex.Unlock()
 	return nil
 }
 
@@ -221,9 +246,13 @@ func (p *LiqoNodeProvider) patchAnnotations(ctx context.Context, annotations map
 		annotations = map[string]string{}
 	}
 
+	p.updateMutex.RLock()
+	lastAppliedAnnotations := p.lastAppliedAnnotations
+	p.updateMutex.RUnlock()
+
 	if err := p.patchNode(ctx, func(node *v1.Node) error {
 		nodeAnnotations := node.GetAnnotations()
-		nodeAnnotations = maps.Sub(nodeAnnotations, p.lastAppliedAnnotations)
+		nodeAnnotations = maps.Sub(nodeAnnotations, lastAppliedAnnotations)
 		nodeAnnotations = maps.Merge(nodeAnnotations, annotations)
 		node.Annotations = nodeAnnotations
 		return nil
@@ -232,7 +261,9 @@ func (p *LiqoNodeProvider) patchAnnotations(ctx context.Context, annotations map
 		return err
 	}
 
+	p.updateMutex.Lock()
 	p.lastAppliedAnnotations = annotations
+	p.updateMutex.Unlock()
 	return nil
 }
 
@@ -246,7 +277,11 @@ func (p *LiqoNodeProvider) patchTaints(ctx context.Context, taints []v1.Taint) e
 		Effect: v1.TaintEffectNoExecute,
 	})
 
-	if reflect.DeepEqual(taints, p.lastAppliedTaints) {
+	p.updateMutex.RLock()
+	lastAppliedTaints := p.lastAppliedTaints
+	p.updateMutex.RUnlock()
+
+	if reflect.DeepEqual(taints, lastAppliedTaints) {
 		return nil
 	}
 	if taints == nil {
@@ -255,7 +290,7 @@ func (p *LiqoNodeProvider) patchTaints(ctx context.Context, taints []v1.Taint) e
 
 	if err := p.patchNode(ctx, func(node *v1.Node) error {
 		nodeTaints := node.Spec.Taints
-		nodeTaints = slice.Sub(nodeTaints, p.lastAppliedTaints)
+		nodeTaints = slice.Sub(nodeTaints, lastAppliedTaints)
 		nodeTaints = slice.Merge(nodeTaints, taints)
 		node.Spec.Taints = nodeTaints
 		return nil
@@ -264,6 +299,8 @@ func (p *LiqoNodeProvider) patchTaints(ctx context.Context, taints []v1.Taint) e
 		return err
 	}
 
+	p.updateMutex.Lock()
 	p.lastAppliedTaints = taints
+	p.updateMutex.Unlock()
 	return nil
 }

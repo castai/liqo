@@ -17,6 +17,7 @@ package liqonodeprovider
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"gomodules.xyz/jsonpatch/v2"
 	v1 "k8s.io/api/core/v1"
@@ -27,8 +28,10 @@ import (
 
 // patchNode patches the controlled node applying the provided function.
 func (p *LiqoNodeProvider) patchNode(ctx context.Context, changeFunc func(node *v1.Node) error) error {
+	p.updateMutex.RLock()
 	original, err := json.Marshal(p.node)
 	if err != nil {
+		p.updateMutex.RUnlock()
 		klog.Error(err)
 		return err
 	}
@@ -39,6 +42,7 @@ func (p *LiqoNodeProvider) patchNode(ctx context.Context, changeFunc func(node *
 		klog.Error(err)
 		return err
 	}
+	p.updateMutex.RUnlock()
 
 	target, err := json.Marshal(newNode)
 	if err != nil {
@@ -64,6 +68,11 @@ func (p *LiqoNodeProvider) patchNode(ctx context.Context, changeFunc func(node *
 		return err
 	}
 
+	klog.Info("Starting node patch")
+	start := time.Now()
+	defer func() {
+		klog.Info("Node patch completed, it took", time.Since(start))
+	}()
 	p.node, err = p.localClient.CoreV1().Nodes().Patch(ctx,
 		p.node.Name, types.JSONPatchType, bytes, metav1.PatchOptions{})
 	if err != nil {
