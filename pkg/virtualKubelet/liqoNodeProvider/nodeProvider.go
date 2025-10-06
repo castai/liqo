@@ -55,7 +55,7 @@ type LiqoNodeProvider struct {
 	networkReady         bool
 
 	onNodeChangeCallback func(*corev1.Node)
-	updateMutex          sync.Mutex
+	updateMutex          sync.RWMutex
 }
 
 // Ping checks if the node is still active.
@@ -101,14 +101,16 @@ func (p *LiqoNodeProvider) NotifyNodeStatus(_ context.Context, f func(*corev1.No
 // IsTerminating indicates if the node is in terminating (and in the draining phase).
 func (p *LiqoNodeProvider) IsTerminating() bool {
 	klog.Infof("Trying to check if the node is terminating")
-	p.updateMutex.Lock()
-	defer p.updateMutex.Unlock()
+	p.updateMutex.RLock()
+	defer p.updateMutex.RUnlock()
 	klog.Infof("Node is terminating: %v", p.terminating)
 	return p.terminating
 }
 
 // GetNode returns the node managed by the provider.
 func (p *LiqoNodeProvider) GetNode() *corev1.Node {
+	p.updateMutex.RLock()
+	defer p.updateMutex.RUnlock()
 	return p.node
 }
 
