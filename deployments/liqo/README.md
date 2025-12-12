@@ -100,7 +100,7 @@
 | networking.fabric.pod.labels | object | `{}` | Labels for the fabric pod. |
 | networking.fabric.pod.priorityClassName | string | `""` | PriorityClassName (https://kubernetes.io/docs/concepts/scheduling-eviction/pod-priority-preemption/#pod-priority) for the fabric pod. |
 | networking.fabric.pod.resources | object | `{"limits":{},"requests":{}}` | Resource requests and limits (https://kubernetes.io/docs/user-guide/compute-resources/) for the fabric pod. |
-| networking.fabric.tolerations | list | `[]` | Extra tolerations for the fabric daemonset. |
+| networking.fabric.tolerations | list | `[]` | Extra tolerations for the fabric pod. |
 | networking.gatewayTemplates | object | `{"container":{"gateway":{"image":{"name":"ghcr.io/castai/gateway","version":""}},"geneve":{"image":{"name":"ghcr.io/castai/gateway/geneve","version":""}},"wireguard":{"image":{"name":"ghcr.io/castai/gateway/wireguard","version":""}}},"ping":{"interval":"2s","lossThreshold":5,"updateStatusInterval":"10s"},"replicas":1,"server":{"service":{"allocateLoadBalancerNodePorts":"","annotations":{}}},"wireguard":{"implementation":"kernel"}}` | Set the options for the default gateway (server/client) templates. The default templates use a WireGuard implementation to connect the gateway of the clusters. These options are used to configure only the default templates and should not be considered if a custom template is used. |
 | networking.gatewayTemplates.container.gateway.image.name | string | `"ghcr.io/castai/gateway"` | Image repository for the gateway container. |
 | networking.gatewayTemplates.container.gateway.image.version | string | `""` | Custom version for the gateway image. If not specified, the global tag is used. |
