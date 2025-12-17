@@ -399,7 +399,8 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          path: ./liqoctl/
+          path:
+            ./liqoctl/
 
             # we need to upload only helm artifacts first, to make the index updater to work
       - uses: ncipollo/release-action@v1
