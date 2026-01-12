@@ -44,9 +44,9 @@ func ProvisionRemotePVC(ctx context.Context,
 	if labels == nil {
 		return nil, controller.ProvisioningInBackground, fmt.Errorf("no labels found for node %s", options.SelectedNode.GetName())
 	}
-	remoteClusterID, ok := labels[consts.RemoteClusterID]
+	edgeLocationName, ok := labels[consts.EdgeLocationName]
 	if !ok {
-		return nil, controller.ProvisioningInBackground, fmt.Errorf("no remote cluster ID found for node %s", options.SelectedNode.GetName())
+		return nil, controller.ProvisioningInBackground, fmt.Errorf("edge location name found on node %s", options.SelectedNode.GetName())
 	}
 
 	// get the storage class for the remote PVC,
@@ -90,9 +90,9 @@ func ProvisionRemotePVC(ctx context.Context,
 						{
 							MatchExpressions: []corev1.NodeSelectorRequirement{
 								{
-									Key:      consts.RemoteClusterID,
+									Key:      consts.EdgeLocationName,
 									Operator: corev1.NodeSelectorOpIn,
-									Values:   []string{remoteClusterID},
+									Values:   []string{edgeLocationName},
 								},
 							},
 						},
