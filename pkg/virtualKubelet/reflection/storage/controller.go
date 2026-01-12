@@ -49,10 +49,6 @@ const (
 // - the volume binding mode is WaitForFirstConsumer
 // - the selected node is the one the reflector is managing.
 func (npvcr *NamespacedPersistentVolumeClaimReflector) shouldProvision(claim *corev1.PersistentVolumeClaim) (bool, error) {
-	if claim.Spec.VolumeName != "" {
-		return false, nil
-	}
-
 	if provisioner, found := claim.Annotations[annStorageProvisioner]; found {
 		if npvcr.knownProvisioner(provisioner) {
 			claimClass := util.GetPersistentVolumeClaimClass(claim)
@@ -103,12 +99,6 @@ func (npvcr *NamespacedPersistentVolumeClaimReflector) provisionClaimOperation(c
 	//  the locks. Check that PV (with deterministic name) hasn't been provisioned
 	//  yet.
 	pvName := "pvc-" + string(claim.UID)
-	_, err := npvcr.volumes.Get(pvName)
-	if err == nil {
-		// Volume has been already provisioned, nothing to do.
-		klog.V(4).Infof("Persistentvolume %q already exists, skipping", pvName)
-		return controller.ProvisioningFinished, nil
-	}
 
 	// Prepare a claimRef to the claim early (to fail before a volume is
 	// provisioned)

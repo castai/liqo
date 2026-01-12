@@ -44,9 +44,9 @@ func ProvisionRemotePVC(ctx context.Context,
 	if labels == nil {
 		return nil, controller.ProvisioningInBackground, fmt.Errorf("no labels found for node %s", options.SelectedNode.GetName())
 	}
-	edgeLocationName, ok := labels[consts.EdgeLocationName]
+	liqoTypeValue, ok := labels[consts.TypeLabel]
 	if !ok {
-		return nil, controller.ProvisioningInBackground, fmt.Errorf("edge location name found on node %s", options.SelectedNode.GetName())
+		return nil, controller.ProvisioningInBackground, fmt.Errorf("liqo type found on node %s", options.SelectedNode.GetName())
 	}
 
 	// get the storage class for the remote PVC,
@@ -90,9 +90,9 @@ func ProvisionRemotePVC(ctx context.Context,
 						{
 							MatchExpressions: []corev1.NodeSelectorRequirement{
 								{
-									Key:      consts.EdgeLocationName,
+									Key:      consts.TypeLabel,
 									Operator: corev1.NodeSelectorOpIn,
-									Values:   []string{edgeLocationName},
+									Values:   []string{liqoTypeValue},
 								},
 							},
 						},
