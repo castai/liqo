@@ -59,6 +59,7 @@ const (
 	// as it is managed externally.
 	SkipVkDeploymentAnnotation = "liqo.io/skip-vk-deployment"
 
+
 	// ProvisionPVCOnAllEdgesAnnotationKey by default a PVC with the Liqo storage class is bound to the virtual node,
 	// where the pod is scheduled. If this annotation is set to "true", the PVC can be provisioned on all edge nodes.
 	// WARNING: each edge node will maintain its own version of the PVC. This is useful for avoiding
