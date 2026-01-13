@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/liqotech/liqo/pkg/utils/virtualkubelet"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -49,6 +50,16 @@ const (
 // - the volume binding mode is WaitForFirstConsumer
 // - the selected node is the one the reflector is managing.
 func (npvcr *NamespacedPersistentVolumeClaimReflector) shouldProvision(claim *corev1.PersistentVolumeClaim) (bool, error) {
+	if claim.Annotations == nil {
+		return false, nil
+	}
+
+	// If PVC should not provisioned on all the edge nodes, skip if volume is already bound.
+	shouldProvisionOnAllEdges := claim.Annotations[virtualkubelet.ProvisionPVCOnAllEdgesAnnotations] == "true"
+	if claim.Spec.VolumeName != "" && !shouldProvisionOnAllEdges {
+		return false, nil
+	}
+
 	if provisioner, found := claim.Annotations[annStorageProvisioner]; found {
 		if npvcr.knownProvisioner(provisioner) {
 			claimClass := util.GetPersistentVolumeClaimClass(claim)
