@@ -28,7 +28,6 @@ import (
 
 	"github.com/liqotech/liqo/pkg/consts"
 	"github.com/liqotech/liqo/pkg/utils/maps"
-	"github.com/liqotech/liqo/pkg/utils/virtualkubelet"
 	"github.com/liqotech/liqo/pkg/virtualKubelet/forge"
 )
 
@@ -42,7 +41,8 @@ func ProvisionRemotePVC(ctx context.Context,
 	virtualPvc := options.PVC
 
 	// Check whether pvc should be provisione on all the edges, in that case just filter by virtual node.
-	shouldProvisionOnAllEdges := virtualPvc.Annotations != nil && virtualPvc.Annotations[virtualkubelet.ProvisionPVCOnAllEdgesAnnotations] == "true"
+	shouldProvisionOnAllEdges := virtualPvc.Annotations != nil &&
+		virtualPvc.Annotations[consts.ProvisionPVCOnAllEdgesAnnotationKey] == consts.ProvisionPVCOnAllEdgesAnnotationValue
 	nodeSelectorKey := consts.RemoteClusterID
 	if shouldProvisionOnAllEdges {
 		nodeSelectorKey = consts.TypeLabel
@@ -55,7 +55,8 @@ func ProvisionRemotePVC(ctx context.Context,
 
 	nodeSelectorValue, ok := labels[nodeSelectorKey]
 	if !ok {
-		return nil, controller.ProvisioningInBackground, fmt.Errorf("liqo node selector %q not found on node %s", nodeSelectorKey, options.SelectedNode.GetName())
+		return nil, controller.ProvisioningInBackground,
+			fmt.Errorf("liqo node selector %q not found on node %s", nodeSelectorKey, options.SelectedNode.GetName())
 	}
 
 	// get the storage class for the remote PVC,

@@ -19,7 +19,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/liqotech/liqo/pkg/utils/virtualkubelet"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -28,6 +27,8 @@ import (
 	"k8s.io/kubectl/pkg/scheme"
 	"sigs.k8s.io/sig-storage-lib-external-provisioner/v7/controller"
 	"sigs.k8s.io/sig-storage-lib-external-provisioner/v7/util"
+
+	"github.com/liqotech/liqo/pkg/consts"
 )
 
 const (
@@ -55,7 +56,7 @@ func (npvcr *NamespacedPersistentVolumeClaimReflector) shouldProvision(claim *co
 	}
 
 	// If PVC should not provisioned on all the edge nodes, skip if volume is already bound.
-	shouldProvisionOnAllEdges := claim.Annotations[virtualkubelet.ProvisionPVCOnAllEdgesAnnotations] == "true"
+	shouldProvisionOnAllEdges := claim.Annotations[consts.ProvisionPVCOnAllEdgesAnnotationKey] == consts.ProvisionPVCOnAllEdgesAnnotationValue
 	if claim.Spec.VolumeName != "" && !shouldProvisionOnAllEdges {
 		return false, nil
 	}

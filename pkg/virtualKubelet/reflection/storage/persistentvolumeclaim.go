@@ -120,7 +120,8 @@ func (npvcr *NamespacedPersistentVolumeClaimReflector) Handle(ctx context.Contex
 	utilruntime.Must(client.IgnoreNotFound(lerr))
 
 	// Check whether the pvc should be provisioned on all the edges
-	shouldProvisionOnAllEdges := local.Annotations != nil && local.Annotations[virtualkubelet.ProvisionPVCOnAllEdgesAnnotations] == "true"
+	shouldProvisionOnAllEdges := local.Annotations != nil &&
+		local.Annotations[consts.ProvisionPVCOnAllEdgesAnnotationKey] == consts.ProvisionPVCOnAllEdgesAnnotationValue
 
 	remote, rerr := npvcr.remotePersistentVolumeClaims.Get(name)
 	utilruntime.Must(client.IgnoreNotFound(rerr))
