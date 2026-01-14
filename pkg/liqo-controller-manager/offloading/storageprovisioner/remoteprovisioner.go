@@ -43,20 +43,36 @@ func ProvisionRemotePVC(ctx context.Context,
 	// Check whether pvc should be provisione on all the edges, in that case just filter by virtual node.
 	shouldProvisionOnAllEdges := virtualPvc.Annotations != nil &&
 		virtualPvc.Annotations[consts.ProvisionPVCOnAllEdgesAnnotationKey] == consts.ProvisionPVCOnAllEdgesAnnotationValue
-	nodeSelectorKey := consts.RemoteClusterID
-	if shouldProvisionOnAllEdges {
-		nodeSelectorKey = consts.TypeLabel
-	}
 
-	labels := options.SelectedNode.GetLabels()
-	if labels == nil {
-		return nil, controller.ProvisioningInBackground, fmt.Errorf("no labels found for node %s", options.SelectedNode.GetName())
-	}
+	var nodeAffinity *corev1.VolumeNodeAffinity
+	if !shouldProvisionOnAllEdges {
+		labels := options.SelectedNode.GetLabels()
+		nodeSelectorKey := consts.RemoteClusterID
+		if labels == nil {
+			return nil, controller.ProvisioningInBackground, fmt.Errorf("no labels found for node %s", options.SelectedNode.GetName())
+		}
 
-	nodeSelectorValue, ok := labels[nodeSelectorKey]
-	if !ok {
-		return nil, controller.ProvisioningInBackground,
-			fmt.Errorf("liqo node selector %q not found on node %s", nodeSelectorKey, options.SelectedNode.GetName())
+		nodeSelectorValue, ok := labels[nodeSelectorKey]
+		if !ok {
+			return nil, controller.ProvisioningInBackground,
+				fmt.Errorf("liqo node selector %q not found on node %s", nodeSelectorKey, options.SelectedNode.GetName())
+		}
+
+		nodeAffinity = &corev1.VolumeNodeAffinity{
+			Required: &corev1.NodeSelector{
+				NodeSelectorTerms: []corev1.NodeSelectorTerm{
+					{
+						MatchExpressions: []corev1.NodeSelectorRequirement{
+							{
+								Key:      nodeSelectorKey,
+								Operator: corev1.NodeSelectorOpIn,
+								Values:   []string{nodeSelectorValue},
+							},
+						},
+					},
+				},
+			},
+		}
 	}
 
 	// get the storage class for the remote PVC,
@@ -94,21 +110,7 @@ func ProvisionRemotePVC(ctx context.Context,
 					Path: "/tmp/liqo-placeholder",
 				},
 			},
-			NodeAffinity: &corev1.VolumeNodeAffinity{
-				Required: &corev1.NodeSelector{
-					NodeSelectorTerms: []corev1.NodeSelectorTerm{
-						{
-							MatchExpressions: []corev1.NodeSelectorRequirement{
-								{
-									Key:      nodeSelectorKey,
-									Operator: corev1.NodeSelectorOpIn,
-									Values:   []string{nodeSelectorValue},
-								},
-							},
-						},
-					},
-				},
-			},
+			NodeAffinity: nodeAffinity,
 		},
 	}
 
