@@ -92,7 +92,7 @@ func ProvisionRemotePVC(ctx context.Context,
 }
 
 func buildPvNodeAffinity(options controller.ProvisionOptions) (*corev1.VolumeNodeAffinity, error) {
-	nodeAffinitySelectorKey := consts.RemoteClusterID
+	nodeAffinitySelectorKey := consts.EdgeLocationName
 	labels := options.SelectedNode.GetLabels()
 	if labels == nil {
 		return nil, fmt.Errorf("no labels found for node %s", options.SelectedNode.GetName())
