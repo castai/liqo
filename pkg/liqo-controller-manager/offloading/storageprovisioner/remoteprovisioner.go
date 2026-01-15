@@ -40,25 +40,6 @@ func ProvisionRemotePVC(ctx context.Context,
 	forgingOpts *forge.ForgingOpts) (*corev1.PersistentVolume, controller.ProvisioningState, error) {
 	virtualPvc := options.PVC
 
-	// Check whether pvc should be provisione on all the edges, in that case just filter by virtual node.
-	shouldProvisionOnAllEdges := virtualPvc.Annotations != nil &&
-		virtualPvc.Annotations[consts.ProvisionPVCOnAllEdgesAnnotationKey] == consts.ProvisionPVCOnAllEdgesAnnotationValue
-	nodeSelectorKey := consts.RemoteClusterID
-	if shouldProvisionOnAllEdges {
-		nodeSelectorKey = consts.TypeLabel
-	}
-
-	labels := options.SelectedNode.GetLabels()
-	if labels == nil {
-		return nil, controller.ProvisioningInBackground, fmt.Errorf("no labels found for node %s", options.SelectedNode.GetName())
-	}
-
-	nodeSelectorValue, ok := labels[nodeSelectorKey]
-	if !ok {
-		return nil, controller.ProvisioningInBackground,
-			fmt.Errorf("liqo node selector %q not found on node %s", nodeSelectorKey, options.SelectedNode.GetName())
-	}
-
 	// get the storage class for the remote PVC,
 	// use its class if denied, otherwise use the default one
 	var remoteStorageClass string
@@ -71,6 +52,11 @@ func ProvisionRemotePVC(ctx context.Context,
 	case remotePvc.Spec.StorageClassName != nil:
 		remoteStorageClass = *remotePvc.Spec.StorageClassName
 	default:
+	}
+
+	nodeAffinity, err := buildPvNodeAffinity(options)
+	if err != nil {
+		return nil, controller.ProvisioningInBackground, err
 	}
 
 	mutation := remotePersistentVolumeClaim(virtualPvc, remoteStorageClass, remoteNamespace, forgingOpts)
@@ -94,21 +80,7 @@ func ProvisionRemotePVC(ctx context.Context,
 					Path: "/tmp/liqo-placeholder",
 				},
 			},
-			NodeAffinity: &corev1.VolumeNodeAffinity{
-				Required: &corev1.NodeSelector{
-					NodeSelectorTerms: []corev1.NodeSelectorTerm{
-						{
-							MatchExpressions: []corev1.NodeSelectorRequirement{
-								{
-									Key:      nodeSelectorKey,
-									Operator: corev1.NodeSelectorOpIn,
-									Values:   []string{nodeSelectorValue},
-								},
-							},
-						},
-					},
-				},
-			},
+			NodeAffinity: nodeAffinity,
 		},
 	}
 
@@ -117,6 +89,49 @@ func ProvisionRemotePVC(ctx context.Context,
 	}
 
 	return pv, controller.ProvisioningFinished, nil
+}
+
+func buildPvNodeAffinity(options controller.ProvisionOptions) (*corev1.VolumeNodeAffinity, error) {
+	nodeAffinitySelectorKey := consts.RemoteClusterID
+	labels := options.SelectedNode.GetLabels()
+	if labels == nil {
+		return nil, fmt.Errorf("no labels found for node %s", options.SelectedNode.GetName())
+	}
+	nodeSelectorValue, ok := labels[nodeAffinitySelectorKey]
+	if !ok {
+		return nil,
+			fmt.Errorf("liqo node selector %q not found on node %s", nodeAffinitySelectorKey, options.SelectedNode.GetName())
+	}
+
+	nodeAffinityOperator := corev1.NodeSelectorOpIn
+	var nodeAffinityValues []string
+
+	// Check whether pvc should be provisione on all the edges, in that case just filter by virtual node.
+	shouldProvisionOnAllEdges := options.PVC.Annotations != nil &&
+		options.PVC.Annotations[consts.ProvisionPVCOnAllEdgesAnnotationKey] == consts.ProvisionPVCOnAllEdgesAnnotationValue
+
+	if shouldProvisionOnAllEdges {
+		nodeAffinityOperator = corev1.NodeSelectorOpExists
+	} else {
+		nodeAffinityValues = []string{nodeSelectorValue}
+	}
+
+	res := &corev1.VolumeNodeAffinity{
+		Required: &corev1.NodeSelector{
+			NodeSelectorTerms: []corev1.NodeSelectorTerm{
+				{
+					MatchExpressions: []corev1.NodeSelectorRequirement{
+						{
+							Key:      nodeAffinitySelectorKey,
+							Operator: nodeAffinityOperator,
+							Values:   nodeAffinityValues,
+						},
+					},
+				},
+			},
+		},
+	}
+	return res, nil
 }
 
 // remotePersistentVolumeClaim forges the apply patch for the reflected PersistentVolumeClaim, given the local one.
