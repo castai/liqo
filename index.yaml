@@ -2,6 +2,21 @@ apiVersion: v1
 entries:
   liqo:
   - apiVersion: v2
+    appVersion: v1.0.3-4
+    created: "2026-01-20T16:12:40.576169402Z"
+    dependencies:
+    - name: liqo-crds
+      repository: file://./charts/liqo-crds
+      version: 0.1.0
+    description: A Helm chart for Liqo
+    digest: 6e6960850a6cffa40512150a002a98305a9b75087fa02cf03c38c583588e5e01
+    icon: https://liqo.io/imgs/favicon.svg
+    name: liqo
+    type: application
+    urls:
+    - https://github.com/castai/liqo/releases/download/v1.0.3-4/liqo-v1.0.3-4.tgz
+    version: v1.0.3-4
+  - apiVersion: v2
     appVersion: v1.0.3-3
     created: "2026-01-15T08:48:23.395423241Z"
     dependencies:
@@ -48,13 +63,13 @@ entries:
     version: v1.0.3-1
   - apiVersion: v2
     appVersion: v1.0.2-1
-    created: "2025-12-17T10:44:04.283463084Z"
+    created: "2025-12-17T09:25:22.926852352Z"
     dependencies:
     - name: liqo-crds
       repository: file://./charts/liqo-crds
       version: 0.1.0
     description: A Helm chart for Liqo
-    digest: 66a5eec9ca1d2642679e4090efdb83ae8aa89c1f256bc4b62f4cf392734f73e1
+    digest: 66e5743cf24ff699b1b4c71602d8f598edb5e34072fdb8f871b3b57e67340a85
     icon: https://liqo.io/imgs/favicon.svg
     name: liqo
     type: application
@@ -63,13 +78,13 @@ entries:
     version: v1.0.2-1
   - apiVersion: v2
     appVersion: v1.0.2-1
-    created: "2025-12-17T09:25:22.926852352Z"
+    created: "2025-12-17T10:44:04.283463084Z"
     dependencies:
     - name: liqo-crds
       repository: file://./charts/liqo-crds
       version: 0.1.0
     description: A Helm chart for Liqo
-    digest: 66e5743cf24ff699b1b4c71602d8f598edb5e34072fdb8f871b3b57e67340a85
+    digest: 66a5eec9ca1d2642679e4090efdb83ae8aa89c1f256bc4b62f4cf392734f73e1
     icon: https://liqo.io/imgs/favicon.svg
     name: liqo
     type: application
@@ -430,4 +445,4 @@ entries:
     urls:
     - https://github.com/castai/liqo/releases/download/v0.10.3-2/liqo-v0.10.3-2.tgz
     version: v0.10.3-2
-generated: "2026-01-15T08:48:23.395671547Z"
+generated: "2026-01-20T16:12:40.57645195Z"
