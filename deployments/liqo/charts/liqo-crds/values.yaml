@@ -1,1 +1,13 @@
-# This file is intentionally empty, since the CRDs do not need to be custoized.
+# CRD Upgrade Configuration
+# Controls whether CRDs should be automatically updated during helm upgrade
+crdUpgrade:
+  # enabled determines if the pre-upgrade hook should run to update CRDs
+  enabled: false
+  # keepResources determines if the hook resources (Job, ConfigMap, ServiceAccount, ClusterRole, ClusterRoleBinding)
+  # should be kept after the hook completes. If false, they are deleted on success.
+  keepResources: false
+  # image is the kubectl image used to apply CRDs
+  image:
+    repository: alpine/k8s
+    tag: 1.31.3
+    pullPolicy: IfNotPresent
