@@ -227,7 +227,9 @@ spec:
                     add:
                     - NET_ADMIN
                     - NET_RAW
-              priorityClassName: "system-cluster-critical"
+              {{- if .Values.networking.gatewayTemplates.pod.priorityClassName }}
+              priorityClassName: {{ .Values.networking.gatewayTemplates.pod.priorityClassName }}
+              {{- end }}
               volumes:
               - name: wireguard-config
                 secret:
