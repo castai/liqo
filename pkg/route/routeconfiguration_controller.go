@@ -193,7 +193,7 @@ func (r *RouteConfigurationReconciler) SetupWithManager(ctx context.Context, mgr
 	}
 
 	return ctrl.NewControllerManagedBy(mgr).Named(consts.CtrlRouteConfiguration).
-		For(&networkingv1beta1.RouteConfiguration{}, builder.WithPredicates(filterByLabelsPredicate)).
+		For(&networkingv1beta1.RouteConfiguration{}, builder.WithPredicates(filterByLabelsPredicate, predicate.GenerationChangedPredicate{})).
 		WatchesRawSource(NewRouteWatchSource(src, NewRouteWatchEventHandler(r.Client, r.LabelsSets))).
 		Complete(r)
 }
@@ -211,20 +211,17 @@ func forgeLabelsPredicate(labelsSets []labels.Set) (predicate.Predicate, error) 
 }
 
 func getConditionRef(rcfg *networkingv1beta1.RouteConfiguration, podname string) *networkingv1beta1.RouteConfigurationStatusCondition {
-	var conditionRef *networkingv1beta1.RouteConfigurationStatusCondition
 	for i := range rcfg.Status.Conditions {
 		if rcfg.Status.Conditions[i].Host == podname {
-			conditionRef = &rcfg.Status.Conditions[i]
-			break
+			return &rcfg.Status.Conditions[i]
 		}
 	}
-	if conditionRef == nil {
-		conditionRef = &networkingv1beta1.RouteConfigurationStatusCondition{
-			Host: podname,
-		}
-		rcfg.Status.Conditions = append(rcfg.Status.Conditions, *conditionRef)
-	}
-	return conditionRef
+	// Condition not found, create a new one
+	rcfg.Status.Conditions = append(rcfg.Status.Conditions, networkingv1beta1.RouteConfigurationStatusCondition{
+		Host: podname,
+	})
+	// Return pointer to the newly added element in the slice
+	return &rcfg.Status.Conditions[len(rcfg.Status.Conditions)-1]
 }
 
 // UpdateStatus updates the status of the given RouteConfiguration.
@@ -235,18 +232,21 @@ func (r *RouteConfigurationReconciler) UpdateStatus(ctx context.Context, er reco
 	conditionRef.Type = networkingv1beta1.RouteConfigurationStatusConditionTypeApplied
 
 	oldStatus := conditionRef.Status
-	if err == nil {
-		conditionRef.Status = metav1.ConditionTrue
-	} else {
-		conditionRef.Status = metav1.ConditionFalse
-	}
-	if oldStatus != conditionRef.Status {
-		conditionRef.LastTransitionTime = metav1.Now()
+	newStatus := metav1.ConditionTrue
+	if err != nil {
+		newStatus = metav1.ConditionFalse
 	}
 
-	er.Eventf(routeconfiguration, "Normal", "RouteConfigurationUpdate", "RouteConfiguration %s: %s", conditionRef.Type, conditionRef.Status)
-	if clerr := r.Client.Status().Update(ctx, routeconfiguration); clerr != nil {
-		err = errors.Join(err, clerr)
+	// Only update if status actually changed
+	if oldStatus != newStatus {
+		conditionRef.Status = newStatus
+		conditionRef.LastTransitionTime = metav1.Now()
+
+		er.Eventf(routeconfiguration, "Normal", "RouteConfigurationUpdate", "RouteConfiguration %s: %s", conditionRef.Type, conditionRef.Status)
+		if clerr := r.Client.Status().Update(ctx, routeconfiguration); clerr != nil {
+			err = errors.Join(err, clerr)
+		}
 	}
+
 	return err
 }

@@ -176,7 +176,7 @@ func (r *FirewallConfigurationReconciler) SetupWithManager(ctx context.Context, 
 		}()
 	}
 	return ctrl.NewControllerManagedBy(mgr).Named(consts.CtrlFirewallConfiguration).
-		For(&networkingv1beta1.FirewallConfiguration{}, builder.WithPredicates(filterByLabelsPredicate)).
+		For(&networkingv1beta1.FirewallConfiguration{}, builder.WithPredicates(filterByLabelsPredicate, predicate.GenerationChangedPredicate{})).
 		WatchesRawSource(NewFirewallWatchSource(src, NewFirewallWatchEventHandler(r.Client, r.LabelsSets))).
 		Complete(r)
 }
@@ -194,20 +194,17 @@ func forgeLabelsPredicate(labelsSets []labels.Set) (predicate.Predicate, error) 
 }
 
 func getConditionRef(fwcfg *networkingv1beta1.FirewallConfiguration, podname string) *networkingv1beta1.FirewallConfigurationStatusCondition {
-	var conditionRef *networkingv1beta1.FirewallConfigurationStatusCondition
 	for i := range fwcfg.Status.Conditions {
 		if fwcfg.Status.Conditions[i].Host == podname {
-			conditionRef = &fwcfg.Status.Conditions[i]
-			break
+			return &fwcfg.Status.Conditions[i]
 		}
 	}
-	if conditionRef == nil {
-		conditionRef = &networkingv1beta1.FirewallConfigurationStatusCondition{
-			Host: podname,
-		}
-		fwcfg.Status.Conditions = append(fwcfg.Status.Conditions, *conditionRef)
-	}
-	return conditionRef
+	// Condition not found, create a new one
+	fwcfg.Status.Conditions = append(fwcfg.Status.Conditions, networkingv1beta1.FirewallConfigurationStatusCondition{
+		Host: podname,
+	})
+	// Return pointer to the newly added element in the slice
+	return &fwcfg.Status.Conditions[len(fwcfg.Status.Conditions)-1]
 }
 
 // UpdateStatus updates the status of the given FirewallConfiguration.
@@ -218,18 +215,21 @@ func (r *FirewallConfigurationReconciler) UpdateStatus(ctx context.Context, er r
 	conditionRef.Type = networkingv1beta1.FirewallConfigurationStatusConditionTypeApplied
 
 	oldStatus := conditionRef.Status
-	if err == nil {
-		conditionRef.Status = metav1.ConditionTrue
-	} else {
-		conditionRef.Status = metav1.ConditionFalse
-	}
-	if oldStatus != conditionRef.Status {
-		conditionRef.LastTransitionTime = metav1.Now()
+	newStatus := metav1.ConditionTrue
+	if err != nil {
+		newStatus = metav1.ConditionFalse
 	}
 
-	er.Eventf(fwcfg, "Normal", "FirewallConfigurationUpdate", "FirewallConfiguration %s: %s", conditionRef.Type, conditionRef.Status)
-	if clerr := r.Client.Status().Update(ctx, fwcfg); clerr != nil {
-		err = errors.Join(err, clerr)
+	// Only update if status actually changed
+	if oldStatus != newStatus {
+		conditionRef.Status = newStatus
+		conditionRef.LastTransitionTime = metav1.Now()
+
+		er.Eventf(fwcfg, "Normal", "FirewallConfigurationUpdate", "FirewallConfiguration %s: %s", conditionRef.Type, conditionRef.Status)
+		if clerr := r.Client.Status().Update(ctx, fwcfg); clerr != nil {
+			err = errors.Join(err, clerr)
+		}
 	}
+
 	return err
 }
