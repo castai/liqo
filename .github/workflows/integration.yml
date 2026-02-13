@@ -5,6 +5,7 @@ on:
       - "v*"
     branches:
       - master
+      - frc/qf
   issue_comment:
     types:
       - created

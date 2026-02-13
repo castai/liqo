@@ -23,19 +23,16 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	networkingv1beta1 "github.com/liqotech/liqo/apis/networking/v1beta1"
 	"github.com/liqotech/liqo/pkg/consts"
-	"github.com/liqotech/liqo/pkg/utils/network/netmonitor"
 )
 
 // RouteConfigurationReconciler manage Configuration lifecycle.
@@ -182,19 +179,13 @@ func (r *RouteConfigurationReconciler) Reconcile(ctx context.Context, req ctrl.R
 func (r *RouteConfigurationReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager) error {
 	klog.Infof("Starting RouteConfiguration controller with labels %v", r.LabelsSets)
 
-	src := make(chan event.GenericEvent)
-	go func() {
-		utilruntime.Must(netmonitor.InterfacesMonitoring(ctx, src, &netmonitor.Options{Route: &netmonitor.OptionsRoute{Delete: true}}))
-	}()
-
 	filterByLabelsPredicate, err := forgeLabelsPredicate(r.LabelsSets)
 	if err != nil {
 		return err
 	}
 
 	return ctrl.NewControllerManagedBy(mgr).Named(consts.CtrlRouteConfiguration).
-		For(&networkingv1beta1.RouteConfiguration{}, builder.WithPredicates(filterByLabelsPredicate)).
-		WatchesRawSource(NewRouteWatchSource(src, NewRouteWatchEventHandler(r.Client, r.LabelsSets))).
+		For(&networkingv1beta1.RouteConfiguration{}, builder.WithPredicates(predicate.And(filterByLabelsPredicate, predicate.GenerationChangedPredicate{}))).
 		Complete(r)
 }
 
@@ -240,6 +231,11 @@ func (r *RouteConfigurationReconciler) UpdateStatus(ctx context.Context, er reco
 	} else {
 		conditionRef.Status = metav1.ConditionFalse
 	}
+
+	if oldStatus == conditionRef.Status {
+		return nil
+	}
+
 	if oldStatus != conditionRef.Status {
 		conditionRef.LastTransitionTime = metav1.Now()
 	}
