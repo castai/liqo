@@ -2,6 +2,21 @@ apiVersion: v1
 entries:
   liqo:
   - apiVersion: v2
+    appVersion: v1.1.1-2
+    created: "2026-02-18T11:00:53.186511166Z"
+    dependencies:
+    - name: liqo-crds
+      repository: file://./charts/liqo-crds
+      version: 0.1.0
+    description: A Helm chart for Liqo
+    digest: bad13afd05d9be0bf9b67a104dd2e483eb6f3d082724714d7314f1133eee6fca
+    icon: https://liqo.io/imgs/favicon.svg
+    name: liqo
+    type: application
+    urls:
+    - https://github.com/castai/liqo/releases/download/v1.1.1-2/liqo-v1.1.1-2.tgz
+    version: v1.1.1-2
+  - apiVersion: v2
     appVersion: v1.1.1-1
     created: "2026-02-17T17:50:41.914510766Z"
     dependencies:
@@ -168,13 +183,13 @@ entries:
     version: v1.0.2-1
   - apiVersion: v2
     appVersion: v1.0.1-6
-    created: "2025-12-15T15:01:58.064042063Z"
+    created: "2025-12-15T07:26:41.527303383Z"
     dependencies:
     - name: liqo-crds
       repository: file://./charts/liqo-crds
       version: 0.1.0
     description: A Helm chart for Liqo
-    digest: 7ec724d32cf71e54c756482c5da7e8650419f570cf7c0603bca10b962b98fe6f
+    digest: d41ca2f7a898c7cb82b4a62eb115ff5d6020c06781c30faac0260ac3d0612bd0
     icon: https://liqo.io/imgs/favicon.svg
     name: liqo
     type: application
@@ -198,13 +213,13 @@ entries:
     version: v1.0.1-6
   - apiVersion: v2
     appVersion: v1.0.1-6
-    created: "2025-12-15T07:26:41.527303383Z"
+    created: "2025-12-15T15:01:58.064042063Z"
     dependencies:
     - name: liqo-crds
       repository: file://./charts/liqo-crds
       version: 0.1.0
     description: A Helm chart for Liqo
-    digest: d41ca2f7a898c7cb82b4a62eb115ff5d6020c06781c30faac0260ac3d0612bd0
+    digest: 7ec724d32cf71e54c756482c5da7e8650419f570cf7c0603bca10b962b98fe6f
     icon: https://liqo.io/imgs/favicon.svg
     name: liqo
     type: application
@@ -520,4 +535,4 @@ entries:
     urls:
     - https://github.com/castai/liqo/releases/download/v0.10.3-2/liqo-v0.10.3-2.tgz
     version: v0.10.3-2
-generated: "2026-02-17T17:50:41.914930995Z"
+generated: "2026-02-18T11:00:53.18686397Z"
