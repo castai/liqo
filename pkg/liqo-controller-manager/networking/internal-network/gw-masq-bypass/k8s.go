@@ -68,25 +68,24 @@ func enforceFirewallPodAbsence(ctx context.Context, cl client.Client, opts *Opti
 		return err
 	}
 	if nodeName == "" {
-		return fmt.Errorf("unable to get node name from pod %s/%s", pod.GetNamespace(), pod.GetName())
-	}
-	fwcfg := networkingv1beta1.FirewallConfiguration{ObjectMeta: metav1.ObjectMeta{
-		Name: generateFirewallConfigurationName(nodeName), Namespace: opts.Namespace,
-	}}
-	if err := cl.Get(ctx, client.ObjectKeyFromObject(&fwcfg), &fwcfg); err != nil {
-		return fmt.Errorf("unable to get firewall configuration %s: %w", fwcfg.GetName(), err)
+		// Entry not present or empty value, skip deletion as already done in previous reconciliation.
+		return nil
 	}
 
+	// Update the firewall configuration to remove the pod entry.
+	fwcfg := networkingv1beta1.FirewallConfiguration{
+		ObjectMeta: metav1.ObjectMeta{Name: generateFirewallConfigurationName(nodeName), Namespace: opts.Namespace},
+	}
 	if _, err := resource.CreateOrUpdate(ctx, cl, &fwcfg, forgeFirewallPodDeleteFunction(pod, &fwcfg)); err != nil {
 		return fmt.Errorf("unable to update firewall configuration %s: %w", fwcfg.GetName(), err)
 	}
 
-	klog.Infof("Removed gw-masquerade-bypass for pod %s/%s from firewallconfiguration %s", pod.GetNamespace(), pod.GetName(), fwcfg.GetName())
+	klog.V(4).Infof("Removed gw-masquerade-bypass for pod %s/%s from firewallconfiguration %s", pod.GetNamespace(), pod.GetName(), fwcfg.GetName())
 
 	DeletePodKeyFromMap(client.ObjectKeyFromObject(pod))
 
 	if len(fwcfg.Spec.Table.Chains[0].Rules.NatRules) == 0 {
-		if err := cl.Delete(ctx, &fwcfg); err != nil {
+		if err := client.IgnoreNotFound(cl.Delete(ctx, &fwcfg)); err != nil {
 			return err
 		}
 	}

@@ -22,6 +22,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -55,7 +56,6 @@ func enforceRoutePodPresence(ctx context.Context, cl client.Client, scheme *runt
 	routecfg := &networkingv1beta1.RouteConfiguration{
 		ObjectMeta: metav1.ObjectMeta{Name: generatePodRouteConfigurationName(pod.Spec.NodeName), Namespace: opts.Namespace},
 	}
-
 	op, err := resource.CreateOrUpdate(ctx, cl, routecfg, forgeRoutePodUpdateFunction(internalnode, routecfg, pod, scheme))
 
 	return op, err
@@ -67,16 +67,19 @@ func enforceRoutePodAbsence(ctx context.Context, cl client.Client, opts *Options
 		return err
 	}
 	if nodeName == "" {
-		return fmt.Errorf("unable to get node name from pod %s/%s", pod.GetNamespace(), pod.GetName())
-	}
-	routecfg := networkingv1beta1.RouteConfiguration{}
-	if err := cl.Get(ctx, client.ObjectKey{Name: generatePodRouteConfigurationName(nodeName), Namespace: opts.Namespace}, &routecfg); err != nil {
-		return err
+		// Entry not present or empty value, skip deletion as already done in previous reconciliation.
+		return nil
 	}
 
-	if _, err := resource.CreateOrUpdate(ctx, cl, &routecfg, forgeRoutePodDeleteFunction(pod, &routecfg)); err != nil {
-		return err
+	// Update the route configuration to remove the pod entry.
+	routecfg := networkingv1beta1.RouteConfiguration{
+		ObjectMeta: metav1.ObjectMeta{Name: generatePodRouteConfigurationName(nodeName), Namespace: opts.Namespace},
 	}
+	if _, err := resource.CreateOrUpdate(ctx, cl, &routecfg, forgeRoutePodDeleteFunction(pod, &routecfg)); err != nil {
+		return fmt.Errorf("unable to update route configuration %s: %w", routecfg.GetName(), err)
+	}
+
+	klog.V(4).Infof("Removed gw-node route for pod %s/%s from routeconfiguration %s", pod.GetNamespace(), pod.GetName(), routecfg.GetName())
 
 	DeletePodKeyFromMap(client.ObjectKeyFromObject(pod))
 
