@@ -2,6 +2,21 @@ apiVersion: v1
 entries:
   liqo:
   - apiVersion: v2
+    appVersion: v1.1.1-5
+    created: "2026-02-23T11:47:30.194533566Z"
+    dependencies:
+    - name: liqo-crds
+      repository: file://./charts/liqo-crds
+      version: 0.1.0
+    description: A Helm chart for Liqo
+    digest: a3b4b81c85fa6a1f6b86bc77db7b843f964573cc9b0117ca46ef0dc4255ad877
+    icon: https://liqo.io/imgs/favicon.svg
+    name: liqo
+    type: application
+    urls:
+    - https://github.com/castai/liqo/releases/download/v1.1.1-5/liqo-v1.1.1-5.tgz
+    version: v1.1.1-5
+  - apiVersion: v2
     appVersion: v1.1.1-4
     created: "2026-02-20T11:15:30.384031133Z"
     dependencies:
@@ -213,21 +228,6 @@ entries:
     version: v1.0.2-1
   - apiVersion: v2
     appVersion: v1.0.1-6
-    created: "2025-12-15T10:05:33.944287381Z"
-    dependencies:
-    - name: liqo-crds
-      repository: file://./charts/liqo-crds
-      version: 0.1.0
-    description: A Helm chart for Liqo
-    digest: c2bf707e1533ee93cde7dccae72656ed8e772430692464ab2eedda61d77a0346
-    icon: https://liqo.io/imgs/favicon.svg
-    name: liqo
-    type: application
-    urls:
-    - https://github.com/castai/liqo/releases/download/v1.0.1-6/liqo-v1.0.1-6.tgz
-    version: v1.0.1-6
-  - apiVersion: v2
-    appVersion: v1.0.1-6
     created: "2025-12-15T07:26:41.527303383Z"
     dependencies:
     - name: liqo-crds
@@ -250,6 +250,21 @@ entries:
       version: 0.1.0
     description: A Helm chart for Liqo
     digest: 7ec724d32cf71e54c756482c5da7e8650419f570cf7c0603bca10b962b98fe6f
+    icon: https://liqo.io/imgs/favicon.svg
+    name: liqo
+    type: application
+    urls:
+    - https://github.com/castai/liqo/releases/download/v1.0.1-6/liqo-v1.0.1-6.tgz
+    version: v1.0.1-6
+  - apiVersion: v2
+    appVersion: v1.0.1-6
+    created: "2025-12-15T10:05:33.944287381Z"
+    dependencies:
+    - name: liqo-crds
+      repository: file://./charts/liqo-crds
+      version: 0.1.0
+    description: A Helm chart for Liqo
+    digest: c2bf707e1533ee93cde7dccae72656ed8e772430692464ab2eedda61d77a0346
     icon: https://liqo.io/imgs/favicon.svg
     name: liqo
     type: application
@@ -565,4 +580,4 @@ entries:
     urls:
     - https://github.com/castai/liqo/releases/download/v0.10.3-2/liqo-v0.10.3-2.tgz
     version: v0.10.3-2
-generated: "2026-02-20T11:15:30.384368954Z"
+generated: "2026-02-23T11:47:30.194909957Z"
