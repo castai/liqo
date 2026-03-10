@@ -73,7 +73,7 @@ var _ = Describe("CSINode", func() {
 			HomeConfig:      cluster.GetCfg(),
 			RemoteConfig:    cluster.GetCfg(), /* not actually used in tests */
 			RemoteClusterID: foreignClusterID,
-		})
+		}, nil)
 	})
 
 	AfterEach(func() {

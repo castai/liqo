@@ -308,7 +308,17 @@ func runRootCommand(ctx context.Context, c *Opts) error {
 			ForeignCluster: foreignCluster,
 		}
 
-		nodeProvider := nodeprovider.NewLiqoNodeProvider(&nodecfg)
+		remoteCl, err := client.New(remoteConfig, client.Options{Scheme: scheme})
+		if err != nil {
+			return fmt.Errorf("creating remote client: %w", err)
+		}
+
+		remoteNodeInfo, err := getRemoteNodeInfo(ctx, remoteCl, c.NodeName)
+		if err != nil {
+			return err
+		}
+
+		nodeProvider := nodeprovider.NewLiqoNodeProvider(&nodecfg, remoteNodeInfo)
 		nodeReady = nodeProvider.StartProvider(ctx)
 
 		nodeRunner, err = node.NewNodeController(
@@ -332,7 +342,7 @@ func runRootCommand(ctx context.Context, c *Opts) error {
 		<-nodeRunner.Ready()
 
 		// The virtual kubelet runs no CSI driver, but a CSINode object is expected to exist for a registered node.
-		err := nodeProvider.EnsureCSINode(ctx)
+		err = nodeProvider.EnsureCSINode(ctx)
 		if err != nil {
 			return fmt.Errorf("setting up the CSINode object for node %q: %w", c.NodeName, err)
 		}
@@ -345,6 +355,25 @@ func runRootCommand(ctx context.Context, c *Opts) error {
 	klog.Info("Setup ended")
 	<-ctx.Done()
 	return nil
+}
+
+// getRemoteNodeInfo returns the system info of the remote node backing the virtual kubelet, or nil if it cannot be
+// retrieved, in which case the node info fields are defaulted and the remote node is not watched for updates.
+func getRemoteNodeInfo(ctx context.Context, remoteCl client.Client, nodeName string) (*corev1.NodeSystemInfo, error) {
+	var remoteNode corev1.Node
+	// The local node name matches the remote node name.
+	err := remoteCl.Get(ctx, client.ObjectKey{Name: nodeName}, &remoteNode)
+	if err != nil && !k8serrors.IsForbidden(err) {
+		return nil, fmt.Errorf("getting remote node: %w", err)
+	}
+	// A forbidden error means that the virtual kubelet does not have permissions to get the remote node. This can
+	// happen if the remote cluster is running an older liqo version. In such cases, we keep the legacy behavior.
+	if k8serrors.IsForbidden(err) {
+		klog.Warning("Unable to get remote node due to missing permissions; defaulting node info fields and skipping remote node watching")
+		return nil, nil
+	}
+
+	return &remoteNode.Status.NodeInfo, nil
 }
 
 func getVersion(config *rest.Config) string {
