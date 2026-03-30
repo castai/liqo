@@ -17,7 +17,7 @@
 package v1beta1
 
 import (
-	context "context"
+	"context"
 	time "time"
 
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -25,17 +25,17 @@ import (
 	watch "k8s.io/apimachinery/pkg/watch"
 	cache "k8s.io/client-go/tools/cache"
 
-	apisoffloadingv1beta1 "github.com/liqotech/liqo/apis/offloading/v1beta1"
+	offloadingv1beta1 "github.com/liqotech/liqo/apis/offloading/v1beta1"
 	versioned "github.com/liqotech/liqo/pkg/client/clientset/versioned"
 	internalinterfaces "github.com/liqotech/liqo/pkg/client/informers/externalversions/internalinterfaces"
-	offloadingv1beta1 "github.com/liqotech/liqo/pkg/client/listers/offloading/v1beta1"
+	v1beta1 "github.com/liqotech/liqo/pkg/client/listers/offloading/v1beta1"
 )
 
 // ShadowPodInformer provides access to a shared informer and lister for
 // ShadowPods.
 type ShadowPodInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() offloadingv1beta1.ShadowPodLister
+	Lister() v1beta1.ShadowPodLister
 }
 
 type shadowPodInformer struct {
@@ -56,33 +56,21 @@ func NewShadowPodInformer(client versioned.Interface, namespace string, resyncPe
 // one. This reduces memory footprint and number of connections to the server.
 func NewFilteredShadowPodInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
-		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
+		&cache.ListWatch{
 			ListFunc: func(options v1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.OffloadingV1beta1().ShadowPods(namespace).List(context.Background(), options)
+				return client.OffloadingV1beta1().ShadowPods(namespace).List(context.TODO(), options)
 			},
 			WatchFunc: func(options v1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.OffloadingV1beta1().ShadowPods(namespace).Watch(context.Background(), options)
+				return client.OffloadingV1beta1().ShadowPods(namespace).Watch(context.TODO(), options)
 			},
-			ListWithContextFunc: func(ctx context.Context, options v1.ListOptions) (runtime.Object, error) {
-				if tweakListOptions != nil {
-					tweakListOptions(&options)
-				}
-				return client.OffloadingV1beta1().ShadowPods(namespace).List(ctx, options)
-			},
-			WatchFuncWithContext: func(ctx context.Context, options v1.ListOptions) (watch.Interface, error) {
-				if tweakListOptions != nil {
-					tweakListOptions(&options)
-				}
-				return client.OffloadingV1beta1().ShadowPods(namespace).Watch(ctx, options)
-			},
-		}, client),
-		&apisoffloadingv1beta1.ShadowPod{},
+		},
+		&offloadingv1beta1.ShadowPod{},
 		resyncPeriod,
 		indexers,
 	)
@@ -93,9 +81,9 @@ func (f *shadowPodInformer) defaultInformer(client versioned.Interface, resyncPe
 }
 
 func (f *shadowPodInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&apisoffloadingv1beta1.ShadowPod{}, f.defaultInformer)
+	return f.factory.InformerFor(&offloadingv1beta1.ShadowPod{}, f.defaultInformer)
 }
 
-func (f *shadowPodInformer) Lister() offloadingv1beta1.ShadowPodLister {
-	return offloadingv1beta1.NewShadowPodLister(f.Informer().GetIndexer())
+func (f *shadowPodInformer) Lister() v1beta1.ShadowPodLister {
+	return v1beta1.NewShadowPodLister(f.Informer().GetIndexer())
 }

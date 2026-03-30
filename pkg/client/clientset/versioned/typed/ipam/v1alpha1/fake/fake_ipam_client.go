@@ -28,7 +28,7 @@ type FakeIpamV1alpha1 struct {
 }
 
 func (c *FakeIpamV1alpha1) IPs(namespace string) v1alpha1.IPInterface {
-	return newFakeIPs(c, namespace)
+	return &FakeIPs{c, namespace}
 }
 
 // RESTClient returns a RESTClient that is used to communicate

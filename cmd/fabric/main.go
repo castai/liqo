@@ -203,6 +203,11 @@ func run(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("unable to setup route configuration reconciler: %w", err)
 	}
 
+	// Register the runnable that waits for the node to become Ready before the manager proceeds.
+	if err := mgr.Add(fabric.NewNodeReadyRunnable(mgr.GetClient(), options.NodeName)); err != nil {
+		return fmt.Errorf("unable to add node ready runnable: %w", err)
+	}
+
 	ifr, err := fabric.NewInternalFabricReconciler(
 		mgr.GetClient(),
 		mgr.GetScheme(),

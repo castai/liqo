@@ -28,23 +28,23 @@ type FakeOffloadingV1beta1 struct {
 }
 
 func (c *FakeOffloadingV1beta1) NamespaceMaps(namespace string) v1beta1.NamespaceMapInterface {
-	return newFakeNamespaceMaps(c, namespace)
+	return &FakeNamespaceMaps{c, namespace}
 }
 
 func (c *FakeOffloadingV1beta1) ShadowEndpointSlices(namespace string) v1beta1.ShadowEndpointSliceInterface {
-	return newFakeShadowEndpointSlices(c, namespace)
+	return &FakeShadowEndpointSlices{c, namespace}
 }
 
 func (c *FakeOffloadingV1beta1) ShadowPods(namespace string) v1beta1.ShadowPodInterface {
-	return newFakeShadowPods(c, namespace)
+	return &FakeShadowPods{c, namespace}
 }
 
 func (c *FakeOffloadingV1beta1) VirtualNodes(namespace string) v1beta1.VirtualNodeInterface {
-	return newFakeVirtualNodes(c, namespace)
+	return &FakeVirtualNodes{c, namespace}
 }
 
 func (c *FakeOffloadingV1beta1) VkOptionsTemplates(namespace string) v1beta1.VkOptionsTemplateInterface {
-	return newFakeVkOptionsTemplates(c, namespace)
+	return &FakeVkOptionsTemplates{c, namespace}
 }
 
 // RESTClient returns a RESTClient that is used to communicate

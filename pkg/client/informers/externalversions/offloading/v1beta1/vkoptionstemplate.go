@@ -17,7 +17,7 @@
 package v1beta1
 
 import (
-	context "context"
+	"context"
 	time "time"
 
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -25,17 +25,17 @@ import (
 	watch "k8s.io/apimachinery/pkg/watch"
 	cache "k8s.io/client-go/tools/cache"
 
-	apisoffloadingv1beta1 "github.com/liqotech/liqo/apis/offloading/v1beta1"
+	offloadingv1beta1 "github.com/liqotech/liqo/apis/offloading/v1beta1"
 	versioned "github.com/liqotech/liqo/pkg/client/clientset/versioned"
 	internalinterfaces "github.com/liqotech/liqo/pkg/client/informers/externalversions/internalinterfaces"
-	offloadingv1beta1 "github.com/liqotech/liqo/pkg/client/listers/offloading/v1beta1"
+	v1beta1 "github.com/liqotech/liqo/pkg/client/listers/offloading/v1beta1"
 )
 
 // VkOptionsTemplateInformer provides access to a shared informer and lister for
 // VkOptionsTemplates.
 type VkOptionsTemplateInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() offloadingv1beta1.VkOptionsTemplateLister
+	Lister() v1beta1.VkOptionsTemplateLister
 }
 
 type vkOptionsTemplateInformer struct {
@@ -56,33 +56,21 @@ func NewVkOptionsTemplateInformer(client versioned.Interface, namespace string, 
 // one. This reduces memory footprint and number of connections to the server.
 func NewFilteredVkOptionsTemplateInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
-		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
+		&cache.ListWatch{
 			ListFunc: func(options v1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.OffloadingV1beta1().VkOptionsTemplates(namespace).List(context.Background(), options)
+				return client.OffloadingV1beta1().VkOptionsTemplates(namespace).List(context.TODO(), options)
 			},
 			WatchFunc: func(options v1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.OffloadingV1beta1().VkOptionsTemplates(namespace).Watch(context.Background(), options)
+				return client.OffloadingV1beta1().VkOptionsTemplates(namespace).Watch(context.TODO(), options)
 			},
-			ListWithContextFunc: func(ctx context.Context, options v1.ListOptions) (runtime.Object, error) {
-				if tweakListOptions != nil {
-					tweakListOptions(&options)
-				}
-				return client.OffloadingV1beta1().VkOptionsTemplates(namespace).List(ctx, options)
-			},
-			WatchFuncWithContext: func(ctx context.Context, options v1.ListOptions) (watch.Interface, error) {
-				if tweakListOptions != nil {
-					tweakListOptions(&options)
-				}
-				return client.OffloadingV1beta1().VkOptionsTemplates(namespace).Watch(ctx, options)
-			},
-		}, client),
-		&apisoffloadingv1beta1.VkOptionsTemplate{},
+		},
+		&offloadingv1beta1.VkOptionsTemplate{},
 		resyncPeriod,
 		indexers,
 	)
@@ -93,9 +81,9 @@ func (f *vkOptionsTemplateInformer) defaultInformer(client versioned.Interface, 
 }
 
 func (f *vkOptionsTemplateInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&apisoffloadingv1beta1.VkOptionsTemplate{}, f.defaultInformer)
+	return f.factory.InformerFor(&offloadingv1beta1.VkOptionsTemplate{}, f.defaultInformer)
 }
 
-func (f *vkOptionsTemplateInformer) Lister() offloadingv1beta1.VkOptionsTemplateLister {
-	return offloadingv1beta1.NewVkOptionsTemplateLister(f.Informer().GetIndexer())
+func (f *vkOptionsTemplateInformer) Lister() v1beta1.VkOptionsTemplateLister {
+	return v1beta1.NewVkOptionsTemplateLister(f.Informer().GetIndexer())
 }
