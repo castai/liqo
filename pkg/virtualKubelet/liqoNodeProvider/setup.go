@@ -73,7 +73,7 @@ func NewLiqoNodeProvider(cfg *InitConfig, remoteNodeInfo *corev1.NodeSystemInfo,
 		terminating:       false,
 		lastAppliedLabels: map[string]string{},
 
-		networkModuleEnabled: false,
+		networkModuleEnabled: nil, // set once ForeignCluster is first observed
 		networkReady:         false,
 		watchRemoteNode:      remoteNodeInfo != nil, // watch the remote node only if we were able to retrieve its info
 		resyncPeriod:         cfg.InformerResyncPeriod,
