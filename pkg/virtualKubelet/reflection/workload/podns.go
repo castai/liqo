@@ -397,7 +397,7 @@ func (npr *NamespacedPodReflector) HandleStatus(ctx context.Context, local, remo
 			klog.Infof("Updating local pod %q status to %q since the remote pod is no longer available", npr.LocalRef(local.GetName()), phase)
 			if _, err := npr.localPodsClient.UpdateStatus(ctx, po, metav1.UpdateOptions{FieldManager: forge.ReflectionFieldManager}); err != nil {
 				klog.Errorf("Failed to update local pod %q status: %v", npr.LocalRef(local.GetName()), err)
-				return err
+				return fmt.Errorf("failed to update local pod %q status: %w", npr.LocalRef(local.GetName()), err)
 			}
 		}
 
