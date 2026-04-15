@@ -147,7 +147,7 @@ func (npr *NamespacedPodReflector) Handle(ctx context.Context, name string) erro
 	if !localExists {
 		defer tracer.Step("Ensured the absence of the remote object")
 		if shadowExists {
-			klog.V(4).Infof("Deleting remote shadowpod %q, since local pod %q does no longer exist", npr.RemoteRef(name), npr.LocalRef(name))
+			klog.Infof("Deleting remote shadowpod %q, since local pod %q does no longer exist", npr.RemoteRef(name), npr.LocalRef(name))
 			return npr.DeleteRemote(ctx, npr.remoteShadowPodsClient, "ShadowPod", name, shadow.GetUID())
 		}
 
@@ -178,7 +178,7 @@ func (npr *NamespacedPodReflector) Handle(ctx context.Context, name string) erro
 		// The remote object is not yet terminating, trigger its deletion.
 		if shadowExists && shadow.DeletionTimestamp.IsZero() {
 			defer tracer.Step("Ensured the absence of the remote object")
-			klog.V(4).Infof("Deleting remote shadowpod %q, since local pod %q is terminating", npr.RemoteRef(name), npr.LocalRef(name))
+			klog.Infof("Deleting remote shadowpod %q, since local pod %q is terminating", npr.RemoteRef(name), npr.LocalRef(name))
 			return npr.DeleteRemote(ctx, npr.remoteShadowPodsClient, "ShadowPod", name, shadow.GetUID())
 		}
 
@@ -271,7 +271,7 @@ func (npr *NamespacedPodReflector) Handle(ctx context.Context, name string) erro
 			if !kerrors.IsConflict(rerr) {
 				npr.Event(local, corev1.EventTypeWarning, forge.EventFailedReflection, forge.EventFailedReflectionMsg(rerr))
 			}
-			return rerr
+			return fmt.Errorf("failed to update remote shadowpod %q: %w", npr.RemoteRef(name), rerr)
 		}
 
 		klog.Infof("Remote shadowpod %q successfully updated (local pod: %q)", npr.RemoteRef(name), npr.LocalRef(name))
