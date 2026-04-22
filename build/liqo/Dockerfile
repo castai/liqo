@@ -3,6 +3,7 @@
 FROM alpine:3.20
 ARG COMPONENT
 ARG TARGETARCH
+RUN apk upgrade --no-cache
 
 RUN if [ "$COMPONENT" = "geneve" ] || [ "$COMPONENT" = "wireguard" ] || [ "$COMPONENT" = "gateway" ]; then \
     set -x; \
