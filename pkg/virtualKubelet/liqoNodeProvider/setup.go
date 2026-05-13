@@ -63,6 +63,7 @@ type InitConfig struct {
 
 	VirtualNode    *offloadingv1beta1.VirtualNode
 	ForeignCluster *liqov1beta1.ForeignCluster
+	RemoteNode     *corev1.Node
 }
 
 // NewLiqoNodeProvider creates and returns a new LiqoNodeProvider.
@@ -90,7 +91,7 @@ func NewLiqoNodeProvider(cfg *InitConfig, remoteNodeInfo *corev1.NodeSystemInfo,
 		tenantNamespace:  cfg.Namespace,
 	}
 
-	nodeProvider.hydrate(cfg.ForeignCluster, cfg.VirtualNode)
+	nodeProvider.hydrate(cfg.ForeignCluster, cfg.RemoteNode, cfg.VirtualNode)
 
 	return nodeProvider
 }

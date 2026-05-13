@@ -262,6 +262,34 @@ func runRootCommand(ctx context.Context, c *Opts) error {
 	if c.CreateNode {
 		var nodeReady chan struct{}
 		var nodeRunner *node.NodeController
+
+		remoteCl, err := client.New(remoteConfig, client.Options{Scheme: scheme})
+		if err != nil {
+			return fmt.Errorf("creating remote client: %w", err)
+		}
+		var remoteNode corev1.Node
+		var remoteNodePtr *corev1.Node
+		err = remoteCl.Get(ctx, client.ObjectKey{Name: c.NodeName}, &remoteNode) // local node name matches with remote node name
+		if err != nil && !k8serrors.IsForbidden(err) {
+			return fmt.Errorf("getting remote node: %w", err)
+		}
+
+		var remoteNodeInfo *corev1.NodeSystemInfo
+		var providerID string
+		// If the error is forbidden, it means that the virtual kubelet does not have permissions to get the remote node.
+		// This can happen if remote cluster is running a older liqo version. In such cases, we keep legacy behavior (defaulting
+		// node info fields) and we do not watch the remote node for updates.
+		if k8serrors.IsForbidden(err) {
+			klog.Warning("Unable to get remote node due to missing permissions; defaulting node info fields and skipping remote node watching")
+		}
+		if err == nil {
+			remoteNodeInfo = &remoteNode.Status.NodeInfo
+			remoteNodePtr = &remoteNode
+			if remoteNode.Spec.ProviderID != "" && strings.HasPrefix(remoteNode.Spec.ProviderID, "castai-omni://") {
+				providerID = remoteNode.Spec.ProviderID
+			}
+		}
+
 		// Initialize the node provider
 		nodecfg := nodeprovider.InitConfig{
 			HomeConfig:      localConfig,
@@ -283,30 +311,7 @@ func runRootCommand(ctx context.Context, c *Opts) error {
 
 			VirtualNode:    &vn,
 			ForeignCluster: foreignCluster,
-		}
-
-		remoteCl, err := client.New(remoteConfig, client.Options{Scheme: scheme})
-		if err != nil {
-			return fmt.Errorf("creating remote client: %w", err)
-		}
-		var remoteNode corev1.Node
-		err = remoteCl.Get(ctx, client.ObjectKey{Name: c.NodeName}, &remoteNode) // local node name matches with remote node name
-		if err != nil && !k8serrors.IsForbidden(err) {
-			return fmt.Errorf("getting remote node: %w", err)
-		}
-		var remoteNodeInfo *corev1.NodeSystemInfo
-		var providerID string
-		// If the error is forbidden, it means that the virtual kubelet does not have permissions to get the remote node.
-		// This can happen if remote cluster is running a older liqo version. In such cases, we keep legacy behavior (defaulting
-		// node info fields) and we do not watch the remote node for updates.
-		if k8serrors.IsForbidden(err) {
-			klog.Warning("Unable to get remote node due to missing permissions; defaulting node info fields and skipping remote node watching")
-		}
-		if err == nil {
-			remoteNodeInfo = &remoteNode.Status.NodeInfo
-			if remoteNode.Spec.ProviderID != "" && strings.HasPrefix(remoteNode.Spec.ProviderID, "castai-omni://") {
-				providerID = remoteNode.Spec.ProviderID
-			}
+			RemoteNode:     remoteNodePtr,
 		}
 
 		nodeProvider := nodeprovider.NewLiqoNodeProvider(&nodecfg, remoteNodeInfo, providerID)
