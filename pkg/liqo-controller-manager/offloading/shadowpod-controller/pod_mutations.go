@@ -69,12 +69,12 @@ func remapKubernetesServiceIP(ctx context.Context, c client.Client,
 	return nil
 }
 
+const containerdSocketPath = "/run/containerd/containerd.sock"
+const k0sContainerdSocketPath = "/run/k0s/containerd.sock"
+
 // remapContainerdSocket remaps the containerd socket path from /run/containerd/containerd.sock to /run/k0s/containerd.sock.
 func remapContainerdSocket(_ context.Context, _ client.Client,
 	podSpec *corev1.PodSpec, _ liqov1beta1.ClusterID) error {
-	const containerdSocketPath = "/run/containerd/containerd.sock"
-	const k0sContainerdSocketPath = "/run/k0s/containerd.sock"
-
 	for i := range podSpec.Volumes {
 		if podSpec.Volumes[i].HostPath == nil {
 			continue
