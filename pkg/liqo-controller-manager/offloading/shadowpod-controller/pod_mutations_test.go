@@ -60,7 +60,7 @@ var _ = Describe("PodMutations", func() {
 						Name: "other-socket",
 						VolumeSource: corev1.VolumeSource{
 							HostPath: &corev1.HostPathVolumeSource{
-								Path: "/run/docker.sock",
+								Path: "/run/docker.sock", // nolint:goconst
 							},
 						},
 					},
@@ -68,7 +68,7 @@ var _ = Describe("PodMutations", func() {
 
 				err := remapContainerdSocket(context.Background(), nil, podSpec, remoteClusterID)
 				Expect(err).NotTo(HaveOccurred())
-				Expect(podSpec.Volumes[0].HostPath.Path).To(Equal("/run/docker.sock"))
+				Expect(podSpec.Volumes[0].HostPath.Path).To(Equal("/run/docker.sock")) // nolint:goconst
 			})
 		})
 
@@ -96,7 +96,7 @@ var _ = Describe("PodMutations", func() {
 						Name: "docker-socket",
 						VolumeSource: corev1.VolumeSource{
 							HostPath: &corev1.HostPathVolumeSource{
-								Path: "/var/run/docker.sock",
+								Path: "/var/run/docker.sock", // nolint:goconst
 							},
 						},
 					},
@@ -118,7 +118,7 @@ var _ = Describe("PodMutations", func() {
 
 				err := remapContainerdSocket(context.Background(), nil, podSpec, remoteClusterID)
 				Expect(err).NotTo(HaveOccurred())
-				Expect(podSpec.Volumes[0].HostPath.Path).To(Equal("/var/run/docker.sock"))
+				Expect(podSpec.Volumes[0].HostPath.Path).To(Equal("/var/run/docker.sock")) // nolint:goconst
 				Expect(podSpec.Volumes[1].HostPath.Path).To(Equal(k0sContainerdSocketPath))
 				Expect(podSpec.Volumes[2].EmptyDir).NotTo(BeNil())
 			})
