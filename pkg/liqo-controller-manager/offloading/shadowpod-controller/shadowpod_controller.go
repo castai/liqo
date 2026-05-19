@@ -16,7 +16,6 @@ package shadowpodctrl
 
 import (
 	"context"
-	"slices"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -39,7 +38,6 @@ import (
 	"github.com/liqotech/liqo/pkg/consts"
 	"github.com/liqotech/liqo/pkg/utils"
 	clientutils "github.com/liqotech/liqo/pkg/utils/clients"
-	ipamips "github.com/liqotech/liqo/pkg/utils/ipam/mapping"
 	"github.com/liqotech/liqo/pkg/virtualKubelet/forge"
 )
 
@@ -176,30 +174,10 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager, workers int) error {
 
 func (r *Reconciler) mutatePodSpec(ctx context.Context,
 	podSpec *corev1.PodSpec, remoteClusterID liqov1beta1.ClusterID) error {
-	if len(podSpec.HostAliases) == 0 {
-		return nil
-	}
-
-	for i := range podSpec.HostAliases {
-		if !slices.Contains(podSpec.HostAliases[i].Hostnames, forge.KubernetesAPIService) {
-			continue
-		}
-
-		// If the HostAliases contains the kubernetes service hostname, it must be replaced with the remapped IP.
-
-		ip := podSpec.HostAliases[i].IP
-
-		// Get the remapped IP for the Kubernetes service.
-		rIP, err := ipamips.MapAddress(ctx, r.Client, remoteClusterID, ip)
-		if err != nil {
+	for _, mutator := range PodMutations {
+		if err := mutator(ctx, r.Client, podSpec, remoteClusterID); err != nil {
 			return err
 		}
-
-		// Update the HostAliases with the remapped IP.
-		podSpec.HostAliases[i].IP = rIP
-
-		return nil
 	}
-
 	return nil
 }
