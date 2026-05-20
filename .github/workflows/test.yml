@@ -1,17 +1,20 @@
 name: Unit Testing
 on:
-  push:
+  pull_request:
     branches:
-      - "master"
-  issue_comment:
+      - main
     types:
-      - created
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+    paths-ignore:
+      - 'hack/**'
 
 jobs:
   test:
     name: Launch Test
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || (github.event_name == 'issue_comment' && contains(github.event.comment.body, '/test'))
     steps:
       - name: Check out code into the Go module directory
         uses: actions/checkout@v4
