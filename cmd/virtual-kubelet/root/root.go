@@ -285,6 +285,17 @@ func runRootCommand(ctx context.Context, c *Opts) error {
 	if c.CreateNode {
 		var nodeReady chan struct{}
 		var nodeRunner *node.NodeController
+
+		remoteCl, err := client.New(remoteConfig, client.Options{Scheme: scheme})
+		if err != nil {
+			return fmt.Errorf("creating remote client: %w", err)
+		}
+
+		remoteNode, err := getRemoteNode(ctx, remoteCl, c.NodeName)
+		if err != nil {
+			return err
+		}
+
 		// Initialize the node provider
 		nodecfg := nodeprovider.InitConfig{
 			HomeConfig:      localConfig,
@@ -306,19 +317,10 @@ func runRootCommand(ctx context.Context, c *Opts) error {
 
 			VirtualNode:    &vn,
 			ForeignCluster: foreignCluster,
+			RemoteNode:     remoteNode,
 		}
 
-		remoteCl, err := client.New(remoteConfig, client.Options{Scheme: scheme})
-		if err != nil {
-			return fmt.Errorf("creating remote client: %w", err)
-		}
-
-		remoteNodeInfo, providerID, err := getRemoteNodeInfo(ctx, remoteCl, c.NodeName)
-		if err != nil {
-			return err
-		}
-
-		nodeProvider := nodeprovider.NewLiqoNodeProvider(&nodecfg, remoteNodeInfo, providerID)
+		nodeProvider := nodeprovider.NewLiqoNodeProvider(&nodecfg)
 		nodeReady = nodeProvider.StartProvider(ctx)
 
 		nodeRunner, err = node.NewNodeController(
@@ -357,29 +359,23 @@ func runRootCommand(ctx context.Context, c *Opts) error {
 	return nil
 }
 
-// getRemoteNodeInfo returns the system info of the remote node backing the virtual kubelet, together with its Omni
-// provider ID (empty if the remote node does not expose one). If the remote node cannot be retrieved, both are empty,
-// and the node info fields are defaulted and the remote node is not watched for updates.
-func getRemoteNodeInfo(ctx context.Context, remoteCl client.Client, nodeName string) (*corev1.NodeSystemInfo, string, error) {
+// getRemoteNode returns the remote node backing the virtual kubelet, or nil if it cannot be retrieved, in which case
+// the node info fields are defaulted and the remote node is not watched for updates.
+func getRemoteNode(ctx context.Context, remoteCl client.Client, nodeName string) (*corev1.Node, error) {
 	var remoteNode corev1.Node
 	// The local node name matches the remote node name.
 	err := remoteCl.Get(ctx, client.ObjectKey{Name: nodeName}, &remoteNode)
 	if err != nil && !k8serrors.IsForbidden(err) {
-		return nil, "", fmt.Errorf("getting remote node: %w", err)
+		return nil, fmt.Errorf("getting remote node: %w", err)
 	}
 	// A forbidden error means that the virtual kubelet does not have permissions to get the remote node. This can
 	// happen if the remote cluster is running an older liqo version. In such cases, we keep the legacy behavior.
 	if k8serrors.IsForbidden(err) {
 		klog.Warning("Unable to get remote node due to missing permissions; defaulting node info fields and skipping remote node watching")
-		return nil, "", nil
+		return nil, nil
 	}
 
-	var providerID string
-	if remoteNode.Spec.ProviderID != "" && strings.HasPrefix(remoteNode.Spec.ProviderID, "castai-omni://") {
-		providerID = remoteNode.Spec.ProviderID
-	}
-
-	return &remoteNode.Status.NodeInfo, providerID, nil
+	return &remoteNode, nil
 }
 
 func getVersion(config *rest.Config) string {
