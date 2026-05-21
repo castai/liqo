@@ -53,6 +53,7 @@ func desiredVirtualNodeMetadata(
 	if annotations == nil {
 		annotations = map[string]string{}
 	}
+
 	taints = append([]v1.Taint{}, virtualNode.Spec.Taints...)
 	taints = append(taints, v1.Taint{
 		Key:    consts.VirtualNodeTolerationKey,

@@ -19,7 +19,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
@@ -274,8 +273,6 @@ func runRootCommand(ctx context.Context, c *Opts) error {
 			return fmt.Errorf("getting remote node: %w", err)
 		}
 
-		var remoteNodeInfo *corev1.NodeSystemInfo
-		var providerID string
 		// If the error is forbidden, it means that the virtual kubelet does not have permissions to get the remote node.
 		// This can happen if remote cluster is running a older liqo version. In such cases, we keep legacy behavior (defaulting
 		// node info fields) and we do not watch the remote node for updates.
@@ -283,11 +280,7 @@ func runRootCommand(ctx context.Context, c *Opts) error {
 			klog.Warning("Unable to get remote node due to missing permissions; defaulting node info fields and skipping remote node watching")
 		}
 		if err == nil {
-			remoteNodeInfo = &remoteNode.Status.NodeInfo
 			remoteNodePtr = &remoteNode
-			if remoteNode.Spec.ProviderID != "" && strings.HasPrefix(remoteNode.Spec.ProviderID, "castai-omni://") {
-				providerID = remoteNode.Spec.ProviderID
-			}
 		}
 
 		// Initialize the node provider
@@ -314,7 +307,7 @@ func runRootCommand(ctx context.Context, c *Opts) error {
 			RemoteNode:     remoteNodePtr,
 		}
 
-		nodeProvider := nodeprovider.NewLiqoNodeProvider(&nodecfg, remoteNodeInfo, providerID)
+		nodeProvider := nodeprovider.NewLiqoNodeProvider(&nodecfg)
 		nodeReady = nodeProvider.StartProvider(ctx)
 
 		nodeRunner, err = node.NewNodeController(

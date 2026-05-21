@@ -95,7 +95,7 @@ var _ = Describe("NodeProvider", func() {
 			PodProviderStopper: podStopper,
 
 			CheckNetworkStatus: true,
-		}, nil, "")
+		})
 
 		_, err = client.CoreV1().Nodes().Create(ctx, nodeProvider.GetNode(), metav1.CreateOptions{})
 		Expect(err).To(BeNil())
@@ -421,7 +421,7 @@ var _ = Describe("NodeProvider", func() {
 			VirtualNode:        virtualNode,
 			ForeignCluster:     foreignCluster,
 			RemoteNode:         remoteNode,
-		}, &v1.NodeSystemInfo{KubeletVersion: "v1.35.0"}, "provider-id")
+		})
 
 		hydratedNode := hydratedProvider.GetNode()
 
@@ -479,7 +479,7 @@ var _ = Describe("NodeProvider", func() {
 			VirtualNode:        virtualNode,
 			ForeignCluster:     nil,
 			RemoteNode:         nil,
-		}, &v1.NodeSystemInfo{KubeletVersion: "v1.35.1"}, "provider-id")
+		})
 
 		hydratedNode := hydratedProvider.GetNode()
 
