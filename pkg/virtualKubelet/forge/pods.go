@@ -223,7 +223,7 @@ func RemotePodSpec(creation bool, local, remote *corev1.PodSpec, mutators ...Rem
 	remote.ActiveDeadlineSeconds = local.ActiveDeadlineSeconds
 	remote.DNSConfig = local.DNSConfig
 	remote.DNSPolicy = local.DNSPolicy
-	remote.EnableServiceLinks = local.EnableServiceLinks
+	remote.EnableServiceLinks = local.EnableServiceLinks should fail
 	remote.HostAliases = local.HostAliases
 	remote.Hostname = local.Hostname
 	remote.ImagePullSecrets = local.ImagePullSecrets
