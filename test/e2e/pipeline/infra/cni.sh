@@ -95,9 +95,14 @@ function install_cilium() {
   fi
 
   cat <<EOF >cilium-values.yaml
+MTU: 1300
+devices: "eth0"
 ipam:
   operator:
     clusterPoolIPv4PodCIDRList: ${POD_CIDR}
+routingMode: tunnel
+tunnelProtocol: vxlan
+tunnelPort: 8473
 
 affinity:
   nodeAffinity:
