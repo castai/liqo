@@ -85,7 +85,8 @@ func CreateKeysSecret(ctx context.Context, cl client.Client, opts *gateway.Optio
 // EnsureConnection creates or updates the connection resource.
 func EnsureConnection(ctx context.Context, cl client.Client, scheme *runtime.Scheme, opts *Options) error {
 	conn := &networkingv1beta1.Connection{ObjectMeta: metav1.ObjectMeta{
-		Name: forge.GatewayResourceName(opts.GwOptions.Name), Namespace: opts.GwOptions.Namespace,
+		Name:      forge.GatewayResourceName(opts.GwOptions.Name),
+		Namespace: opts.GwOptions.Namespace,
 		Labels: map[string]string{
 			string(consts.RemoteClusterID): opts.GwOptions.RemoteClusterID,
 		},
