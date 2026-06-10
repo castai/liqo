@@ -17,3 +17,7 @@ package remoteclusterwide
 
 // +kubebuilder:rbac:groups=metrics.liqo.io,resources=scrape/metrics,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch
+
+// Permissions for DRA reflection of ResourceSlices.
+// +kubebuilder:rbac:groups=resource.k8s.io,resources=resourceslices,verbs=get;list;watch
+// +kubebuilder:rbac:groups=resource.k8s.io,resources=deviceclasses,verbs=get;list;watch;create
