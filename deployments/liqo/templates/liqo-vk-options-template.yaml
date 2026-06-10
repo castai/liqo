@@ -46,7 +46,7 @@ spec:
   {{- end }}
   {{- include "liqo.imagePullSecrets" . | nindent 2 }}
   reflectorsConfig:
-    pod: 
+    pod:
       workers: {{ .Values.offloading.reflection.pod.workers }}
     service:
       workers: {{ .Values.offloading.reflection.service.workers }}
@@ -69,6 +69,10 @@ spec:
     event:
       workers: {{ .Values.offloading.reflection.event.workers }}
       type: {{ .Values.offloading.reflection.event.type }}
+    resourceslice:
+      workers: {{ .Values.offloading.reflection.resourceslice.workers }}
+    resourceclaim:
+      workers: {{ .Values.offloading.reflection.resourceclaim.workers }}
   {{- if .Values.offloading.reflection.customResources }}
   customResources:
     {{- range .Values.offloading.reflection.customResources }}
