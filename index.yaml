@@ -2,6 +2,21 @@ apiVersion: v1
 entries:
   liqo:
   - apiVersion: v2
+    appVersion: v1.1.2-31
+    created: "2026-07-01T09:42:22.700987066Z"
+    dependencies:
+    - name: liqo-crds
+      repository: file://./charts/liqo-crds
+      version: 0.1.0
+    description: A Helm chart for Liqo
+    digest: bb9b2f56e8314dbd37169bf5f7ff92551cc1e98942d0c5d2543afdc3d7a5622f
+    icon: https://liqo.io/imgs/favicon.svg
+    name: liqo
+    type: application
+    urls:
+    - https://github.com/castai/liqo/releases/download/v1.1.2-31/liqo-v1.1.2-31.tgz
+    version: v1.1.2-31
+  - apiVersion: v2
     appVersion: v1.1.2-30
     created: "2026-07-01T09:15:55.653634608Z"
     dependencies:
@@ -693,13 +708,13 @@ entries:
     version: v1.0.1-6
   - apiVersion: v2
     appVersion: v1.0.1-6
-    created: "2025-12-15T10:05:33.944287381Z"
+    created: "2025-12-15T15:01:58.064042063Z"
     dependencies:
     - name: liqo-crds
       repository: file://./charts/liqo-crds
       version: 0.1.0
     description: A Helm chart for Liqo
-    digest: c2bf707e1533ee93cde7dccae72656ed8e772430692464ab2eedda61d77a0346
+    digest: 7ec724d32cf71e54c756482c5da7e8650419f570cf7c0603bca10b962b98fe6f
     icon: https://liqo.io/imgs/favicon.svg
     name: liqo
     type: application
@@ -708,13 +723,13 @@ entries:
     version: v1.0.1-6
   - apiVersion: v2
     appVersion: v1.0.1-6
-    created: "2025-12-15T15:01:58.064042063Z"
+    created: "2025-12-15T10:05:33.944287381Z"
     dependencies:
     - name: liqo-crds
       repository: file://./charts/liqo-crds
       version: 0.1.0
     description: A Helm chart for Liqo
-    digest: 7ec724d32cf71e54c756482c5da7e8650419f570cf7c0603bca10b962b98fe6f
+    digest: c2bf707e1533ee93cde7dccae72656ed8e772430692464ab2eedda61d77a0346
     icon: https://liqo.io/imgs/favicon.svg
     name: liqo
     type: application
@@ -1030,4 +1045,4 @@ entries:
     urls:
     - https://github.com/castai/liqo/releases/download/v0.10.3-2/liqo-v0.10.3-2.tgz
     version: v0.10.3-2
-generated: "2026-07-01T09:15:55.654258825Z"
+generated: "2026-07-01T09:42:22.701591402Z"
