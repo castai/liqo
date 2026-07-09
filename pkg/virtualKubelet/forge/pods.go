@@ -247,7 +247,6 @@ func RemotePodSpec(creation bool, local, remote *corev1.PodSpec, mutators ...Rem
 	remote.ShareProcessNamespace = local.ShareProcessNamespace
 	remote.Subdomain = local.Subdomain
 	remote.TerminationGracePeriodSeconds = local.TerminationGracePeriodSeconds
-	remote.TopologySpreadConstraints = local.TopologySpreadConstraints
 
 	// The information about the service account name is not reflected, since the volume is already
 	// present, and the remote creation would fail as the corresponding service account is not present.
