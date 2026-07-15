@@ -1,6 +1,7 @@
 {{- $ctrlManagerConfig := (merge (dict "name" "controller-manager" "module" "controller-manager" "version" .Values.controllerManager.image.version) .) -}}
 {{- $ipamConfig := (merge (dict "name" "ipam" "module" "ipam") .) -}}
 {{- $awsConfig := (merge (dict "name" "aws-config" "module" "aws-config") .) -}}
+{{- $kubeletConfig := (merge (dict "name" "virtual-kubelet" "module" "virtualkubelet" "version" .Values.virtualKubelet.image.version) .) -}}
 
 apiVersion: apps/v1
 kind: Deployment
@@ -118,6 +119,14 @@ spec:
           {{- if .Values.networking.denyDirectConnections }}
           - --deny-direct-connections
           {{- end }}
+          {{- if .Values.ipam.podCIDRs }}
+          {{- range $cidr := .Values.ipam.podCIDRs }}
+          - --podcidr={{ $cidr }}
+          {{- end }}
+          {{- else if .Values.ipam.podCIDR }}
+          - --podcidr={{ .Values.ipam.podCIDR }}
+          {{- end }}
+          - --vk-options-default-template={{ .Release.Namespace }}/{{ printf "%s-default" $kubeletConfig.name }}
           {{- if .Values.common.extraArgs }}
           {{- toYaml .Values.common.extraArgs | nindent 10 }}
           {{- end }}

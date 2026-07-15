@@ -16,7 +16,6 @@ package virtualnode
 
 import (
 	"slices"
-	"strconv"
 	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -31,9 +30,7 @@ func (w *vnwh) initVirtualNodeDeployment(vn *offloadingv1beta1.VirtualNode, opts
 	if vn.Spec.Template == nil {
 		vn.Spec.Template = &offloadingv1beta1.DeploymentTemplate{}
 	}
-	vkdep := vkforge.VirtualKubeletDeployment(w.clusterID, w.liqoNamespace, w.localPodCIDRs, vn, opts)
-	vn.Spec.Template.Spec = *vkdep.Spec.DeepCopy()
-	vn.Spec.Template.ObjectMeta = *vkdep.ObjectMeta.DeepCopy()
+	vkforge.ForgeVirtualNodeTemplate(vn, opts, w.clusterID, w.liqoNamespace, w.localPodCIDRs)
 }
 
 func mutateSpec(vn *offloadingv1beta1.VirtualNode, opts *offloadingv1beta1.VkOptionsTemplate) {
@@ -174,70 +171,5 @@ func overrideVKOptionsArgs(opts *offloadingv1beta1.VkOptionsTemplate, args []str
 }
 
 func mutateSpecInTemplate(vn *offloadingv1beta1.VirtualNode, vkOpts *offloadingv1beta1.VkOptionsTemplate) {
-	mutateSecretArg(vn)
-	mutateNodeCreate(vn)
-	mutateNodeCheckNetwork(vn)
-	mutateReplicas(vn, vkOpts)
-}
-
-func mutateReplicas(vn *offloadingv1beta1.VirtualNode, vkOpts *offloadingv1beta1.VkOptionsTemplate) {
-	if vkOpts.Spec.Replicas != nil {
-		vn.Spec.Template.Spec.Replicas = vkOpts.Spec.Replicas
-	}
-}
-
-// mutateSecretArg mutate the foreigncluster kubeconfig secret name in the virtual kubelet deployment.
-func mutateSecretArg(vn *offloadingv1beta1.VirtualNode) {
-	ksref := vn.Spec.KubeconfigSecretRef
-	if ksref == nil {
-		return
-	}
-	argSecret := vkforge.StringifyArgument(string(vkforge.ForeignClusterKubeconfigSecretName), ksref.Name)
-	container := &vn.Spec.Template.Spec.Template.Spec.Containers[0]
-
-	for i, arg := range container.Args {
-		if strings.HasPrefix(arg, string(vkforge.ForeignClusterKubeconfigSecretName)) {
-			if arg == argSecret {
-				return
-			}
-			container.Args[i] = argSecret
-			return
-		}
-	}
-
-	container.Args = append(container.Args, argSecret)
-}
-
-// mutateNodeCreate mutate the creation of the remote cluster node.
-func mutateNodeCreate(vn *offloadingv1beta1.VirtualNode) {
-	argCreateNode := vkforge.StringifyArgument(string(vkforge.CreateNode), strconv.FormatBool(*vn.Spec.CreateNode))
-	container := &vn.Spec.Template.Spec.Template.Spec.Containers[0]
-	for i, arg := range container.Args {
-		if strings.HasPrefix(arg, string(vkforge.CreateNode)) {
-			if arg == argCreateNode {
-				return
-			}
-			container.Args[i] = argCreateNode
-			return
-		}
-	}
-
-	container.Args = append(container.Args, argCreateNode)
-}
-
-// mutateNodeCheckNetwork flag mutate the check network flag.
-func mutateNodeCheckNetwork(vn *offloadingv1beta1.VirtualNode) {
-	argCheckNetwork := vkforge.StringifyArgument(string(vkforge.NodeCheckNetwork), strconv.FormatBool(!*vn.Spec.DisableNetworkCheck))
-	container := &vn.Spec.Template.Spec.Template.Spec.Containers[0]
-	for i, arg := range container.Args {
-		if strings.HasPrefix(arg, string(vkforge.NodeCheckNetwork)) {
-			if arg == argCheckNetwork {
-				return
-			}
-			container.Args[i] = argCheckNetwork
-			return
-		}
-	}
-
-	container.Args = append(container.Args, argCheckNetwork)
+	vkforge.MutateSpecInTemplate(vn, vkOpts)
 }

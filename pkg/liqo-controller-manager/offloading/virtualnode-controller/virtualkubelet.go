@@ -20,12 +20,15 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"reflect"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 	k8strings "k8s.io/utils/strings"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -39,6 +42,67 @@ import (
 )
 
 const offloadingPatchHashAnnotation = "liqo.io/offloading-patch-hash"
+
+// reconcileVirtualNodeTemplate re-forges the VirtualNode deployment template from the current VkOptionsTemplate.
+// If the template has changed, the VirtualNode is updated, which in turn triggers the deployment reconciliation.
+// This ensures virtual node pods are updated when the VkOptionsTemplate changes (e.g. during a helm upgrade).
+func (r *VirtualNodeReconciler) reconcileVirtualNodeTemplate(ctx context.Context, virtualNode *offloadingv1beta1.VirtualNode) error {
+	// Determine which VkOptionsTemplate to use: the one referenced by the VN, or the default one.
+	vkOptsRef := r.vkOptsDefaultTemplate
+	if virtualNode.Spec.VkOptionsTemplateRef != nil {
+		vkOptsRef = virtualNode.Spec.VkOptionsTemplateRef
+	}
+	if vkOptsRef == nil {
+		klog.Warningf("No VkOptionsTemplate reference for VirtualNode %q, skipping template reconciliation", virtualNode.Name)
+		return nil
+	}
+
+	var vkOpts offloadingv1beta1.VkOptionsTemplate
+	if err := r.Get(ctx, types.NamespacedName{Namespace: vkOptsRef.Namespace, Name: vkOptsRef.Name}, &vkOpts); err != nil {
+		if apierrors.IsNotFound(err) {
+			klog.Warningf("VkOptionsTemplate %q not found for VirtualNode %q", vkOptsRef, virtualNode.Name)
+			return nil
+		}
+		return fmt.Errorf("unable to get VkOptionsTemplate %q: %w", vkOptsRef, err)
+	}
+
+	// Forge the desired template from the current VkOptionsTemplate.
+	desiredTemplate := &offloadingv1beta1.DeploymentTemplate{}
+	if virtualNode.Spec.Template != nil {
+		desiredTemplate = virtualNode.Spec.Template.DeepCopy()
+	}
+
+	// Save per-VN fields that must be preserved across re-forging.
+	oldCreateNode := virtualNode.Spec.CreateNode
+	oldDisableNetworkCheck := virtualNode.Spec.DisableNetworkCheck
+
+	// Re-forge the template.
+	vkforge.ForgeVirtualNodeTemplate(virtualNode, &vkOpts, r.HomeClusterID, r.liqoNamespace, r.localPodCIDRs)
+
+	// Restore the per-VN fields (these are set on the VN spec, not from the template).
+	virtualNode.Spec.CreateNode = oldCreateNode
+	virtualNode.Spec.DisableNetworkCheck = oldDisableNetworkCheck
+
+	// Apply the mutations that depend on per-VN fields.
+	vkforge.MutateSpecInTemplate(virtualNode, &vkOpts)
+
+	// If the template has not changed, no update is needed.
+	if virtualNode.Spec.Template != nil && desiredTemplate != nil &&
+		reflect.DeepEqual(virtualNode.Spec.Template.ObjectMeta, desiredTemplate.ObjectMeta) &&
+		reflect.DeepEqual(virtualNode.Spec.Template.Spec, desiredTemplate.Spec) {
+		return nil
+	}
+
+	// Update the VirtualNode with the new template.
+	if err := r.Update(ctx, virtualNode); err != nil {
+		return fmt.Errorf("unable to update VirtualNode %q template: %w", virtualNode.Name, err)
+	}
+
+	klog.Infof("VirtualNode %q template updated from VkOptionsTemplate %q", virtualNode.Name, vkOptsRef)
+	r.EventsRecorder.Event(virtualNode, "Normal", "VkTemplateUpdated",
+		"VirtualNode template updated from VkOptionsTemplate")
+	return nil
+}
 
 // createVirtualKubeletDeployment creates the VirtualKubelet Deployment.
 func (r *VirtualNodeReconciler) ensureVirtualKubeletDeploymentPresence(

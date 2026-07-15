@@ -19,6 +19,7 @@ import (
 	"fmt"
 
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -54,9 +55,13 @@ type VirtualNodeReconciler struct {
 	Scheme         *runtime.Scheme
 	EventsRecorder record.EventRecorder
 
-	HomeClusterID    liqov1beta1.ClusterID
-	namespaceManager tenantnamespace.Manager
-	dr               *DeletionRoutine
+	HomeClusterID         liqov1beta1.ClusterID
+	liqoNamespace         string
+	localPodCIDRs         []string
+	vkOptsDefaultTemplate *corev1.ObjectReference
+	updateVirtualNodes    bool
+	namespaceManager      tenantnamespace.Manager
+	dr                    *DeletionRoutine
 }
 
 // NewVirtualNodeReconciler returns a new VirtualNodeReconciler.
@@ -65,6 +70,10 @@ func NewVirtualNodeReconciler(
 	cl client.Client,
 	s *runtime.Scheme, er record.EventRecorder,
 	hci liqov1beta1.ClusterID,
+	liqoNamespace string,
+	localPodCIDRs []string,
+	vkOptsDefaultTemplate *corev1.ObjectReference,
+	updateVirtualNodes bool,
 	namespaceManager tenantnamespace.Manager,
 ) (*VirtualNodeReconciler, error) {
 	vnr := &VirtualNodeReconciler{
@@ -72,8 +81,12 @@ func NewVirtualNodeReconciler(
 		Scheme:         s,
 		EventsRecorder: er,
 
-		HomeClusterID:    hci,
-		namespaceManager: namespaceManager,
+		HomeClusterID:         hci,
+		liqoNamespace:         liqoNamespace,
+		localPodCIDRs:         localPodCIDRs,
+		vkOptsDefaultTemplate: vkOptsDefaultTemplate,
+		updateVirtualNodes:    updateVirtualNodes,
+		namespaceManager:      namespaceManager,
 	}
 	var err error
 	vnr.dr, err = RunDeletionRoutine(ctx, vnr)
@@ -88,6 +101,7 @@ func NewVirtualNodeReconciler(
 // +kubebuilder:rbac:groups=offloading.liqo.io,resources=virtualnodes,verbs=get;list;watch;delete;create;update;patch
 // +kubebuilder:rbac:groups=offloading.liqo.io,resources=virtualnodes/status,verbs=get;list;watch;delete;create;update;patch
 // +kubebuilder:rbac:groups=offloading.liqo.io,resources=virtualnodes/finalizers,verbs=get;list;watch;delete;create;update;patch
+// +kubebuilder:rbac:groups=offloading.liqo.io,resources=vkoptionstemplates,verbs=get;list;watch
 // +kubebuilder:rbac:groups=offloading.liqo.io,resources=namespacemaps,verbs=get;list;watch;delete;create
 // +kubebuilder:rbac:groups=core,resources=namespaces,verbs=get;list;watch;
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;delete;create;update;patch
@@ -118,6 +132,12 @@ func (r *VirtualNodeReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			}
 		}
 		return ctrl.Result{}, nil
+	}
+
+	if r.updateVirtualNodes {
+		if err := r.reconcileVirtualNodeTemplate(ctx, virtualNode); err != nil {
+			return ctrl.Result{}, fmt.Errorf("unable to reconcile the virtual-node template: %w", err)
+		}
 	}
 
 	if err := r.ensureVirtualKubeletDeploymentPresence(ctx, virtualNode); err != nil {
