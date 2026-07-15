@@ -110,6 +110,10 @@ func InitFlags(flagset *pflag.FlagSet, opts *Options) {
 		"The number of workers used to reconcile ShadowEndpointSlice resources.")
 	flagset.BoolVar(&opts.DenyDirectConnections, "deny-direct-connections", false,
 		"Prevents the usage of direct connections between provider clusters.")
+	flagset.StringSliceVar(&opts.LocalPodCIDRs, "podcidr", nil, "The CIDRs to use for the pod network")
+	flagset.StringVar(&opts.VkOptsDefaultTemplate, "vk-options-default-template", "", "Namespaced name of the virtual-kubelet options template")
+	flagset.BoolVar(&opts.UpdateVirtualNodes, "update-virtual-nodes", false,
+		"Enable reconciliation of VirtualNode templates from VkOptionsTemplate on controller startup (useful to update virtual nodes after helm upgrades)")
 
 	// Cross module
 	flagset.BoolVar(&opts.EnableAPIServerProxyIPRemapping, "enable-api-server-proxy-ip-remapping", true, "Enable the API server proxy IP remapping")

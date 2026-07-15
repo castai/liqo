@@ -1,0 +1,19 @@
+{{- $kubeletConfig := (merge (dict "name" "virtual-kubelet" "module" "virtualkubelet" "version" .Values.virtualKubelet.image.version) .) -}}
+
+{{- if .Capabilities.APIVersions.Has "policy/v1/PodDisruptionBudget" }}
+apiVersion: policy/v1
+{{- else }}
+apiVersion: policy/v1beta1
+{{- end }}
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "liqo.prefixedName" $kubeletConfig }}
+  labels:
+    {{- include "liqo.labels" $kubeletConfig | nindent 4 }}
+spec:
+  # Ensure only one virtual kubelet pod is disrupted at a time during upgrades,
+  # so that virtual nodes are updated one at a time.
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      offloading.liqo.io/component: virtual-kubelet

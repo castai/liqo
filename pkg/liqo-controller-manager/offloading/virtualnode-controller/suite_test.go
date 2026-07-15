@@ -125,6 +125,10 @@ var _ = BeforeSuite(func() {
 		scheme.Scheme,
 		k8sManager.GetEventRecorderFor("virtualnode-controller"),
 		localID,
+		"liqo",
+		[]string{"10.0.0.0/16"},
+		&corev1.ObjectReference{Namespace: "liqo", Name: "virtual-kubelet-default"},
+		false,
 		namespaceManager,
 	)
 	Expect(err).ToNot(HaveOccurred())
