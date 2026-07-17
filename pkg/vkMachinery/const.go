@@ -29,9 +29,6 @@ const ContainerName = "virtual-kubelet"
 const CRBPrefix = "liqo-node-"
 
 // AuthDelegatorCRBPrefix -> the prefix used to create the virtual kubelet auth-delegator cluster role binding name.
-// This binding grants the virtual kubelet service account the system:auth-delegator role, allowing it to perform
-// TokenAccessReview (authentication) and SubjectAccessReview (authorization) against the Kubernetes API server,
-// which is required to secure the virtual kubelet API with webhook auth.
 const AuthDelegatorCRBPrefix = "liqo-auth-delegator-"
 
 // KubeletBaseLabels are the static labels that are set on every VirtualKubelet.

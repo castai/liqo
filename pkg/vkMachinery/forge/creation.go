@@ -99,9 +99,7 @@ func VirtualKubeletClusterRoleBinding(kubeletNamespace, kubeletName string,
 }
 
 // VirtualKubeletAuthDelegatorClusterRoleBinding forges a ClusterRoleBinding binding the virtual kubelet
-// service account to the built-in system:auth-delegator role. This grants the virtual kubelet the
-// permissions to perform TokenAccessReview and SubjectAccessReview against the Kubernetes API server,
-// which is required to secure the virtual kubelet API with webhook authentication and authorization.
+// service account to the built-in system:auth-delegator role.
 func VirtualKubeletAuthDelegatorClusterRoleBinding(kubeletNamespace, kubeletName string,
 	remoteCluster liqov1beta1.ClusterID) *rbacv1.ClusterRoleBinding {
 	return &rbacv1.ClusterRoleBinding{
