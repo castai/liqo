@@ -13,5 +13,7 @@ rules:
   - ""
   resources:
   - nodes/proxy
+  - nodes/metrics
+  - nodes/stats
   verbs:
   - get

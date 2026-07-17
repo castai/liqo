@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/virtual-kubelet/virtual-kubelet/node/api"
+	"github.com/virtual-kubelet/virtual-kubelet/node/nodeutil"
 	certificates "k8s.io/api/certificates/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -84,11 +85,18 @@ func setupHTTPServer(ctx context.Context, handler workload.PodHandler, localClie
 		GetPods:               handler.List,
 	}
 
-	api.AttachPodRoutes(podRoutes, mux, true)
+	api.AttachPodRoutes(podRoutes, mux, false)
+
+	// Secure all the pod routes with webhook-based authentication and authorization,
+	// delegating the requests to the Kubernetes API server (same mechanism used by the real kubelet).
+	auth, err := nodeutil.WebhookAuth(localClient, cfg.NodeName)
+	if err != nil {
+		return fmt.Errorf("failed to initialize webhook auth: %w", err)
+	}
 
 	server := &http.Server{
 		Addr:              fmt.Sprintf("0.0.0.0:%d", cfg.ListenPort),
-		Handler:           mux,
+		Handler:           nodeutil.WithAuth(auth, mux),
 		ReadHeaderTimeout: 10 * time.Second, // Required to limit the effects of the Slowloris attack.
 		TLSConfig: &tls.Config{
 			GetCertificate: retriever,

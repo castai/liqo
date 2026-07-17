@@ -22,6 +22,7 @@ import (
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -32,6 +33,7 @@ import (
 	liqov1beta1 "github.com/liqotech/liqo/apis/core/v1beta1"
 	offloadingv1beta1 "github.com/liqotech/liqo/apis/offloading/v1beta1"
 	liqoconst "github.com/liqotech/liqo/pkg/consts"
+	vkforge "github.com/liqotech/liqo/pkg/vkMachinery/forge"
 )
 
 func ForgeFakeVirtualNode(nameVirtualNode, tenantNamespaceName string,
@@ -164,6 +166,28 @@ var _ = Describe("VirtualNode controller", func() {
 				return controllerutil.ContainsFinalizer(virtualNode1, virtualNodeControllerFinalizer)
 			}, timeout, interval).Should(BeTrue())
 
+		})
+
+		It(fmt.Sprintf("Check if the auth-delegator ClusterRoleBinding is created for %s", nameVirtualNode1), func() {
+			vkName := vkforge.VirtualKubeletName(virtualNode1)
+			expectedCRB := vkforge.VirtualKubeletAuthDelegatorClusterRoleBinding(tenantNamespace1.Name, vkName, remoteClusterID1)
+
+			By(fmt.Sprintf("Try to get the auth-delegator ClusterRoleBinding: %s", expectedCRB.Name))
+			Eventually(func() bool {
+				var crb rbacv1.ClusterRoleBinding
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: expectedCRB.Name}, &crb); err != nil {
+					return false
+				}
+				// Verify the binding points to the built-in system:auth-delegator role.
+				if crb.RoleRef.Name != "system:auth-delegator" || crb.RoleRef.Kind != "ClusterRole" {
+					return false
+				}
+				// Verify the subject is the virtual kubelet service account.
+				if len(crb.Subjects) != 1 || crb.Subjects[0].Name != vkName || crb.Subjects[0].Namespace != tenantNamespace1.Name {
+					return false
+				}
+				return true
+			}, timeout, interval).Should(BeTrue())
 		})
 
 		It(fmt.Sprintf("Check if finalizers are correctly created for %s", nameVirtualNode2), func() {
