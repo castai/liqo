@@ -297,7 +297,7 @@ var _ = Describe("VirtualNode controller", func() {
 		})
 
 		It(fmt.Sprintf("Check if the auth-delegator ClusterRoleBinding is created for %s", nameVirtualNode1), func() {
-			vkName := vkforge.VirtualKubeletName(virtualNode1)
+			vkName := virtualNode1.Name
 			expectedCRB := vkforge.VirtualKubeletAuthDelegatorClusterRoleBinding(tenantNamespace1.Name, vkName, remoteClusterID1)
 
 			By(fmt.Sprintf("Try to get the auth-delegator ClusterRoleBinding: %s", expectedCRB.Name))
