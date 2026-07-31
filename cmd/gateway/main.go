@@ -31,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	networkingv1beta1 "github.com/liqotech/liqo/apis/networking/v1beta1"
@@ -190,6 +191,11 @@ func run(cmd *cobra.Command, _ []string) error {
 
 		if err = connr.SetupWithManager(mgr); err != nil {
 			return fmt.Errorf("unable to setup connections reconciler: %w", err)
+		}
+
+		connCollector := connection.NewPrometheusCollector(connr.ConnChecker, connoptions.GwOptions.RemoteClusterID)
+		if err := metrics.Registry.Register(connCollector); err != nil {
+			return fmt.Errorf("unable to register connection prometheus collector: %w", err)
 		}
 	}
 

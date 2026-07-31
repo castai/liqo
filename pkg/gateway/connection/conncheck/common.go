@@ -42,6 +42,3 @@ const (
 	// PONG is the type of a pong message.
 	PONG MsgTypes = "PONG"
 )
-
-// UpdateFunc is a function called when a Receiver gets a PONG or when a connection is declared failed.
-type UpdateFunc func(connected bool, latency time.Duration, time time.Time) error

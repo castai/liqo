@@ -22,8 +22,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
+
+	"github.com/liqotech/liqo/pkg/gateway/tunnel"
 )
 
 // Peer represents a peer.
@@ -32,7 +35,6 @@ type Peer struct {
 	latency   time.Duration
 	// lastReceivedTimestamp is the timestamp when the last received PING has been sent.
 	lastReceivedTimestamp time.Time
-	updateCallback        UpdateFunc
 }
 
 // Receiver is a receiver for conncheck messages.
@@ -70,39 +72,40 @@ func (r *Receiver) SendPong(raddr *net.UDPAddr, msg *Msg) error {
 }
 
 // ReceivePong receives a PONG message.
-func (r *Receiver) ReceivePong(msg *Msg) error {
+func (r *Receiver) ReceivePong(msg *Msg, receivedAt time.Time) {
 	r.m.Lock()
 	defer r.m.Unlock()
-	if peer, ok := r.peers[msg.ClusterID]; ok {
-		if msg.TimeStamp.Before(peer.lastReceivedTimestamp) {
-			klog.V(8).Infof("dropped a PONG message from %s because out-of-order", msg.ClusterID)
-			return nil
-		}
-		now := time.Now()
-		peer.lastReceivedTimestamp = msg.TimeStamp
-		peer.latency = now.Sub(msg.TimeStamp)
-		peer.connected = true
-
-		err := peer.updateCallback(true, peer.latency, now)
-		if err != nil {
-			return fmt.Errorf("failed to update peer %s: %w", msg.ClusterID, err)
-		}
-		return nil
+	peer, ok := r.peers[msg.ClusterID]
+	if !ok {
+		klog.V(8).Infof("%s sender has not been initialized", msg.ClusterID)
+		return
 	}
-	return fmt.Errorf("%s sender has not been initialized", msg.ClusterID)
+	if msg.TimeStamp.Before(peer.lastReceivedTimestamp) {
+		klog.V(8).Infof("dropped a PONG message from %s because out-of-order", msg.ClusterID)
+		return
+	}
+	peer.lastReceivedTimestamp = msg.TimeStamp
+	peer.latency = receivedAt.Sub(msg.TimeStamp)
+	peer.connected = true
+
+	// Observe the latency at the point of measurement, not at scrape time.
+	// This ensures the histogram captures every real RTT sample (every ping interval)
+	// rather than repeating the last value once per Prometheus scrape.
+	tunnel.MetricsPeerLatencyHistogram.With(prometheus.Labels{
+		tunnel.MetricsLabels[0]: "gateway",
+		tunnel.MetricsLabels[1]: msg.ClusterID,
+	}).Observe(float64(peer.latency.Microseconds()))
 }
 
 // InitPeer initializes a peer.
-func (r *Receiver) InitPeer(clusterID string, updateCallback UpdateFunc) error {
+func (r *Receiver) InitPeer(clusterID string) {
 	r.m.Lock()
 	defer r.m.Unlock()
 	r.peers[clusterID] = &Peer{
 		connected:             false,
 		latency:               0,
 		lastReceivedTimestamp: time.Now(),
-		updateCallback:        updateCallback,
 	}
-	return nil
 }
 
 // Run starts the receiver.
@@ -114,6 +117,8 @@ func (r *Receiver) Run(ctx context.Context) {
 			klog.Errorf("conncheck receiver: failed to read from %s: %v", raddr.String(), err)
 			return false, nil
 		}
+		receivedAt := time.Now()
+
 		msgr := &Msg{}
 		err = json.Unmarshal(r.buff[:n], msgr)
 		if err != nil {
@@ -127,7 +132,7 @@ func (r *Receiver) Run(ctx context.Context) {
 			err = r.SendPong(raddr, msgr)
 		case PONG:
 			klog.V(8).Infof("conncheck receiver: received a PONG from %s  -> %s", raddr, msgr)
-			err = r.ReceivePong(msgr)
+			r.ReceivePong(msgr, receivedAt)
 		}
 		if err != nil {
 			klog.Errorf("conncheck receiver: %v", err)
@@ -154,10 +159,6 @@ func (r *Receiver) RunDisconnectObserver(ctx context.Context) {
 				klog.V(8).Infof("conncheck receiver: %s unreachable", id)
 				peer.connected = false
 				peer.latency = 0
-				err := peer.updateCallback(false, 0, time.Time{})
-				if err != nil {
-					klog.Errorf("conncheck receiver: failed to update peer %s: %s", peer.lastReceivedTimestamp, err)
-				}
 			}
 			return false, nil
 		})
