@@ -67,6 +67,8 @@ const (
 	FlagNameMetricsAddress FlagName = "metrics-address"
 	// FlagNameProbeAddr is the address for the health probe endpoint.
 	FlagNameProbeAddr FlagName = "health-probe-bind-address"
+	// FlagNamePprofAddr is the address for the pprof endpoint. Empty disables it.
+	FlagNamePprofAddr FlagName = "pprof-bind-address"
 
 	// FlagNameEnableNftMonitor is the flag to enable the nftables monitor.
 	FlagNameEnableNftMonitor FlagName = "enable-nft-monitor"
@@ -128,6 +130,7 @@ func InitFlags(flagset *pflag.FlagSet, opts *Options) {
 
 	flagset.StringVar(&opts.MetricsAddress, FlagNameMetricsAddress.String(), "0", "Address for the metrics endpoint")
 	flagset.StringVar(&opts.ProbeAddr, FlagNameProbeAddr.String(), "0", "Address for the health probe endpoint")
+	flagset.StringVar(&opts.PprofAddr, FlagNamePprofAddr.String(), ":6060", "Address for the pprof endpoint. Empty disables it")
 
 	flagset.BoolVar(&opts.EnableNftMonitor, FlagNameEnableNftMonitor.String(), true, "Enable nftables monitor")
 	flagset.BoolVar(&opts.EnableRouteMonitor, FlagNameEnableRouteMonitor.String(), true, "Enable route monitor")

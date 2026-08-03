@@ -152,6 +152,7 @@ func run(cmd *cobra.Command, _ []string) error {
 			BindAddress: connoptions.GwOptions.MetricsAddress,
 		},
 		HealthProbeBindAddress: connoptions.GwOptions.ProbeAddr,
+		PprofBindAddress:       connoptions.GwOptions.PprofAddr,
 		LeaderElection:         connoptions.GwOptions.LeaderElection,
 		LeaderElectionID: fmt.Sprintf(
 			"%s.%s.%s.connections.liqo.io",
