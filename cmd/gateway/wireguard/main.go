@@ -37,7 +37,6 @@ import (
 	ipamv1alpha1 "github.com/liqotech/liqo/apis/ipam/v1alpha1"
 	networkingv1beta1 "github.com/liqotech/liqo/apis/networking/v1beta1"
 	"github.com/liqotech/liqo/pkg/gateway"
-	"github.com/liqotech/liqo/pkg/gateway/concurrent"
 	"github.com/liqotech/liqo/pkg/gateway/tunnel/wireguard"
 	flagsutils "github.com/liqotech/liqo/pkg/utils/flags"
 	"github.com/liqotech/liqo/pkg/utils/mapper"
@@ -55,7 +54,6 @@ func init() {
 	utilruntime.Must(ipamv1alpha1.AddToScheme(scheme))
 }
 
-// +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;create;update;delete
 // +kubebuilder:rbac:groups=core,resources=events,verbs=get;list;watch;create;update;patch;delete
 
 func main() {
@@ -102,7 +100,6 @@ func run(cmd *cobra.Command, _ []string) error {
 			BindAddress: options.GwOptions.MetricsAddress,
 		},
 		HealthProbeBindAddress: options.GwOptions.ProbeAddr,
-		LeaderElection:         false,
 	})
 	if err != nil {
 		return fmt.Errorf("unable to create manager: %w", err)
@@ -172,17 +169,6 @@ func run(cmd *cobra.Command, _ []string) error {
 	}
 	if err := metrics.Registry.Register(promcollect); err != nil {
 		return fmt.Errorf("unable to register prometheus collector: %w", err)
-	}
-
-	if options.GwOptions.LeaderElection {
-		runnable, err := concurrent.NewRunnableGuest(options.GwOptions.ContainerName)
-		if err != nil {
-			return fmt.Errorf("unable to create runnable guest: %w", err)
-		}
-		if err := runnable.Start(cmd.Context()); err != nil {
-			return fmt.Errorf("unable to start runnable guest: %w", err)
-		}
-		defer runnable.Close()
 	}
 
 	// Start the manager.
