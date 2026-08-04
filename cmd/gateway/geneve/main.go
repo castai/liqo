@@ -32,7 +32,6 @@ import (
 	networkingv1beta1 "github.com/liqotech/liqo/apis/networking/v1beta1"
 	"github.com/liqotech/liqo/pkg/conncheck"
 	"github.com/liqotech/liqo/pkg/gateway"
-	"github.com/liqotech/liqo/pkg/gateway/concurrent"
 	gwfabric "github.com/liqotech/liqo/pkg/gateway/fabric"
 	flagsutils "github.com/liqotech/liqo/pkg/utils/flags"
 	"github.com/liqotech/liqo/pkg/utils/mapper"
@@ -48,7 +47,6 @@ func init() {
 	utilruntime.Must(networkingv1beta1.AddToScheme(scheme))
 }
 
-// +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;create;update;delete
 // +kubebuilder:rbac:groups=core,resources=events,verbs=get;list;watch;create;update;patch;delete
 
 func main() {
@@ -117,17 +115,6 @@ func run(cmd *cobra.Command, _ []string) error {
 
 	if err := gtr.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to setup geneve tunnel reconciler: %w", err)
-	}
-
-	if options.GwOptions.LeaderElection {
-		runnableGuest, err := concurrent.NewRunnableGuest(options.GwOptions.ContainerName)
-		if err != nil {
-			return fmt.Errorf("unable to create runnable guest: %w", err)
-		}
-		if err := runnableGuest.Start(cmd.Context()); err != nil {
-			return fmt.Errorf("unable to start runnable guest: %w", err)
-		}
-		defer runnableGuest.Close()
 	}
 
 	runnableGeneveCleanup, err := gwfabric.NewRunnableGeneveCleanup(mgr.GetClient(), options.GeneveCleanupInterval)
