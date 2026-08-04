@@ -17,7 +17,6 @@ package gateway
 import (
 	"github.com/liqotech/liqo/pkg/consts"
 	"github.com/liqotech/liqo/pkg/firewall"
-	"github.com/liqotech/liqo/pkg/gateway/concurrent"
 	"github.com/liqotech/liqo/pkg/route"
 )
 
@@ -50,8 +49,7 @@ const (
 // ForgeActiveGatewayPodLabels returns the labels for the gateway pod.
 func ForgeActiveGatewayPodLabels() map[string]string {
 	return map[string]string{
-		concurrent.ActiveGatewayKey: concurrent.ActiveGatewayValue,
-		GatewayComponentKey:         GatewayComponentGateway,
+		GatewayComponentKey: GatewayComponentGateway,
 	}
 }
 
