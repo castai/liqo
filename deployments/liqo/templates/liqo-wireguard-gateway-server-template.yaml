@@ -91,8 +91,6 @@ spec:
                 - --pod-name={{"$(POD_NAME)"}}
                 - --gateway-uid={{"{{ .GatewayUID }}"}}
                 - --mode=server
-                - --container-name=gateway
-                - --concurrent-containers-names=wireguard,geneve
                 {{- if .Values.common.globalAnnotations }}
                 {{- $d := dict "commandName" "--global-annotations" "dictionary" .Values.common.globalAnnotations -}}
                 {{- include "liqo.concatenateMap" $d | nindent 16 }}
@@ -109,11 +107,6 @@ spec:
                 - --ping-loss-threshold={{ .Values.networking.gatewayTemplates.ping.lossThreshold }}
                 - --ping-interval={{ .Values.networking.gatewayTemplates.ping.interval }}
                 - --ping-update-status-interval={{ .Values.networking.gatewayTemplates.ping.updateStatusInterval }}
-                {{- if gt (int .Values.networking.gatewayTemplates.replicas) 1 }}
-                - --leader-election=true
-                {{- else }}
-                - --leader-election=false
-                {{- end }}
                 {{- if not .Values.requirements.kernel.enabled }}
                 - --disable-kernel-version-check
                 {{- end }}
@@ -123,9 +116,6 @@ spec:
                 {{- if .Values.networking.gatewayTemplates.container.gateway.extraArgs }}
                 {{- toYaml .Values.networking.gatewayTemplates.container.gateway.extraArgs | nindent 16 }}
                 {{- end }}
-                volumeMounts:
-                - name: ipc
-                  mountPath: /ipc
                 ports:
                 {{- if .Values.metrics.enabled }}
                 - containerPort: 8082
@@ -167,18 +157,12 @@ spec:
                 - --remote-cluster-id={{"{{ .ClusterID }}"}}
                 - --gateway-uid={{"{{ .GatewayUID }}"}}
                 - --mode=server
-                - --container-name=wireguard
                 - --mtu={{"{{ .Spec.MTU }}"}}
                 - --listen-ports={{ printf "{{ if .Spec.Endpoint.Ports }}{{ range $i, $p := .Spec.Endpoint.Ports }}{{ if $i }},{{ end }}{{ $p }}{{ end }}{{ else }}{{ .Spec.Endpoint.Port }}{{ end }}" }}
                 {{- if .Values.metrics.enabled }}
                 - --metrics-address=:8084
                 {{- end }}
                 - --health-probe-bind-address=:8085
-                {{- if gt (int .Values.networking.gatewayTemplates.replicas) 1 }}
-                - --leader-election=true
-                {{- else }}
-                - --leader-election=false
-                {{- end }}
                 - --implementation={{ .Values.networking.gatewayTemplates.wireguard.implementation }}
                 - --preserve-client-endpoint={{ .Values.networking.gatewayTemplates.wireguard.preserveClientEndpoint }}
                 ports:
@@ -204,8 +188,6 @@ spec:
                   privileged: true
                   {{ end }}
                 volumeMounts:
-                - name: ipc
-                  mountPath: /ipc
                 - name: wireguard-config
                   mountPath: /etc/wireguard/keys
               - name: geneve
@@ -223,7 +205,6 @@ spec:
                 - --pod-name={{"$(POD_NAME)"}}
                 - --gateway-uid={{"{{ .GatewayUID }}"}}
                 - --mode=server
-                - --container-name=geneve
                 - --geneve-port={{ .Values.networking.genevePort }}
                 - --ping-enabled=true
                 - --ping-port={{ .Values.networking.fabric.config.ping.port }}
@@ -231,14 +212,6 @@ spec:
                 - --metrics-address=:8086
                 {{- end }}
                 - --health-probe-bind-address=:8087
-                {{- if gt (int .Values.networking.gatewayTemplates.replicas) 1 }}
-                - --leader-election=true
-                {{- else }}
-                - --leader-election=false
-                {{- end }}
-                volumeMounts:
-                - name: ipc
-                  mountPath: /ipc
                 ports:
                 {{- if .Values.metrics.enabled }}
                 - containerPort: 8086
@@ -273,6 +246,4 @@ spec:
               - name: wireguard-config
                 secret:
                   secretName: "{{"{{ .SecretName }}"}}"
-              - name: ipc
-                emptyDir: {}
 {{- end }}

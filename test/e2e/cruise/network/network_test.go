@@ -37,7 +37,6 @@ import (
 	liqov1beta1 "github.com/liqotech/liqo/apis/core/v1beta1"
 	networkingv1beta1 "github.com/liqotech/liqo/apis/networking/v1beta1"
 	"github.com/liqotech/liqo/pkg/gateway"
-	"github.com/liqotech/liqo/pkg/gateway/concurrent"
 	networkflags "github.com/liqotech/liqo/pkg/liqoctl/test/network/flags"
 	"github.com/liqotech/liqo/pkg/liqoctl/test/network/setup"
 	"github.com/liqotech/liqo/test/e2e/testconsts"
@@ -366,7 +365,6 @@ func RestartPods(cl client.Client) {
 		cl.List(ctx, podList, &client.ListOptions{
 			LabelSelector: labels.SelectorFromSet(labels.Set{
 				gateway.GatewayComponentKey: gateway.GatewayComponentGateway,
-				concurrent.ActiveGatewayKey: concurrent.ActiveGatewayValue,
 			}),
 		}),
 	).To(Succeed())
@@ -468,7 +466,6 @@ func checkUniqueActiveGatewayPod(cl client.Client, numActiveGateway int) error {
 	if err := cl.List(ctx, podList, &client.ListOptions{
 		LabelSelector: labels.SelectorFromSet(labels.Set{
 			gateway.GatewayComponentKey: gateway.GatewayComponentGateway,
-			concurrent.ActiveGatewayKey: concurrent.ActiveGatewayValue,
 		}),
 	}); err != nil {
 		return fmt.Errorf("unable to list active gateway pods: %w", err)
