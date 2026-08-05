@@ -27,6 +27,7 @@ const (
 	Secret                ResourceReflected = "secret"
 	ServiceAccount        ResourceReflected = "serviceaccount"
 	PersistentVolumeClaim ResourceReflected = "persistentvolumeclaim"
+	LocalStoragePVC       ResourceReflected = "localstoragepvc"
 	Event                 ResourceReflected = "event"
 	ResourceSlice         ResourceReflected = "resourceslice"
 	ResourceClaim         ResourceReflected = "resourceclaim"
@@ -35,8 +36,8 @@ const (
 // Reflectors is the list of all resources that can be reflected.
 var Reflectors = []ResourceReflected{
 	Pod, Service, EndpointSlice, Ingress, ConfigMap, Secret, ServiceAccount, PersistentVolumeClaim, Event,
-	ResourceSlice, ResourceClaim,
+	LocalStoragePVC, ResourceSlice, ResourceClaim,
 }
 
 // ReflectorsCustomizableType is the list of resources for which the reflection type can be customized.
-var ReflectorsCustomizableType = []ResourceReflected{Service, Ingress, ConfigMap, Secret, Event}
+var ReflectorsCustomizableType = []ResourceReflected{Service, Ingress, ConfigMap, Secret, LocalStoragePVC, Event}

@@ -66,6 +66,9 @@ spec:
       workers: {{ .Values.offloading.reflection.serviceaccount.workers }}
     persistentvolumeclaim:
       workers: {{ .Values.offloading.reflection.persistentvolumeclaim.workers }}
+    localstoragepvc:
+      workers: {{ .Values.offloading.reflection.localstoragepvc.workers }}
+      type: {{ .Values.offloading.reflection.localstoragepvc.type }}
     event:
       workers: {{ .Values.offloading.reflection.event.workers }}
       type: {{ .Values.offloading.reflection.event.type }}
