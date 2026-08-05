@@ -15,6 +15,10 @@
 package gatewayclient
 
 import (
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/utils/ptr"
+
+	networkingv1beta1 "github.com/liqotech/liqo/apis/networking/v1beta1"
 	"github.com/liqotech/liqo/pkg/liqo-controller-manager/networking/forge"
 	"github.com/liqotech/liqo/pkg/liqoctl/rest"
 	"github.com/liqotech/liqo/pkg/utils/args"
@@ -33,6 +37,7 @@ type Options struct {
 	Addresses         []string
 	Port              int32
 	Protocol          string
+	Replicas          int32
 	Wait              bool
 }
 
@@ -63,8 +68,13 @@ func (o *Options) getForgeOptions() *forge.GwClientOptions {
 		TemplateName:      o.TemplateName,
 		TemplateNamespace: o.TemplateNamespace,
 		MTU:               o.MTU,
-		Addresses:         o.Addresses,
-		Port:              o.Port,
-		Protocol:          o.Protocol,
+		Endpoints: []networkingv1beta1.EndpointStatus{
+			{
+				Addresses: o.Addresses,
+				Ports:     []int32{o.Port},
+				Protocol:  ptr.To(corev1.Protocol(o.Protocol)),
+			},
+		},
+		Replicas: o.Replicas,
 	}
 }

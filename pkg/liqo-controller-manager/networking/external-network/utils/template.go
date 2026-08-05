@@ -33,7 +33,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
-var variableRegex = regexp.MustCompile(`{{\s*(.\S+)\s*}}`)
+var variableRegex = regexp.MustCompile(`{{\s*(?:\w+\s+)?(\$\S+|\.\S+).*?}}`)
 
 const (
 	gatewayTemplateLabelKey   = "networking.liqo.io/gatewaytemplate"

@@ -17,6 +17,8 @@ package wireguard
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -28,7 +30,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
-	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -40,7 +41,6 @@ import (
 	"github.com/liqotech/liqo/pkg/gateway"
 	"github.com/liqotech/liqo/pkg/gateway/forge"
 	enutils "github.com/liqotech/liqo/pkg/liqo-controller-manager/networking/external-network/utils"
-	mapsutil "github.com/liqotech/liqo/pkg/utils/maps"
 	"github.com/liqotech/liqo/pkg/utils/resource"
 )
 
@@ -74,7 +74,7 @@ func NewWgGatewayClientReconciler(cl client.Client, s *runtime.Scheme,
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;create;delete;update
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;delete;create;update;patch
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterrolebindings,verbs=get;list;watch;delete;create;update;patch
-// +kubectl:rbac:groups=core,resources=serviceaccounts,verbs=get;list;watch;delete;create;update;patch
+// +kubebuilder:rbac:groups=core,resources=serviceaccounts,verbs=get;list;watch;delete;create;update;patch
 
 // Reconcile manage WgGatewayClient lifecycle.
 func (r *WgGatewayClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.Result, err error) {
@@ -124,20 +124,8 @@ func (r *WgGatewayClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, nil
 	}
 
-	deployNsName := types.NamespacedName{Namespace: wgClient.Namespace, Name: forge.GatewayResourceName(wgClient.Name)}
-
-	var deploy *appsv1.Deployment
-	var d appsv1.Deployment
-	err = r.Get(ctx, deployNsName, &d)
-	switch {
-	case apierrors.IsNotFound(err):
-		deploy = nil
-	case err != nil:
-		klog.Errorf("error while getting deployment %q: %v", deployNsName, err)
-		return ctrl.Result{}, err
-	default:
-		deploy = &d
-	}
+	replicas := wgClient.Spec.Replicas
+	baseDeployName := forge.GatewayResourceName(wgClient.Name)
 
 	// Handle status
 	defer func() {
@@ -154,7 +142,7 @@ func (r *WgGatewayClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		r.eventRecorder.Event(wgClient, corev1.EventTypeNormal, "Reconciled", "WireGuard gateway client reconciled")
 	}()
 
-	if err := r.handleInternalEndpointStatus(ctx, wgClient, deploy); err != nil {
+	if err := r.handleInternalEndpointStatus(ctx, wgClient); err != nil {
 		klog.Errorf("Error while handling internal endpoint status: %v", err)
 		r.eventRecorder.Event(wgClient, corev1.EventTypeWarning, "InternalEndpointStatusFailed",
 			fmt.Sprintf("Failed to handle internal endpoint status: %s", err))
@@ -185,12 +173,22 @@ func (r *WgGatewayClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, err
 	}
 
-	// Ensure deployment (create or update)
-	_, err = r.ensureDeployment(ctx, wgClient, deployNsName)
-	if err != nil {
+	// Ensure deployments (create or update)
+	for i := int32(0); i < replicas; i++ {
+		depNsName := types.NamespacedName{Namespace: wgClient.Namespace, Name: forge.ReplicaResourceName(wgClient.Name, i)}
+		if _, err = r.ensureDeployment(ctx, wgClient, depNsName, i); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+	// Delete obsolete deployments on scale-down.
+	if err = deleteObsoleteDeployments(ctx, r.Client, wgClient, baseDeployName, replicas); err != nil {
+		klog.Errorf("Error while deleting obsolete deployments: %v", err)
+		r.eventRecorder.Event(wgClient, corev1.EventTypeWarning, "ObsoleteDeploymentsDeletionFailed",
+			fmt.Sprintf("Failed to delete obsolete deployments: %s", err))
 		return ctrl.Result{}, err
 	}
-	r.eventRecorder.Event(wgClient, corev1.EventTypeNormal, "DeploymentEnforced", "Enforced deployment")
+
+	r.eventRecorder.Event(wgClient, corev1.EventTypeNormal, "DeploymentEnforced", "Enforced deployments")
 
 	// Ensure Metrics (if set)
 	err = enutils.EnsureMetrics(ctx,
@@ -220,14 +218,14 @@ func (r *WgGatewayClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 func (r *WgGatewayClientReconciler) ensureDeployment(ctx context.Context, wgClient *networkingv1beta1.WgGatewayClient,
-	depNsName types.NamespacedName) (*appsv1.Deployment, error) {
+	depNsName types.NamespacedName, replica int32) (*appsv1.Deployment, error) {
 	dep := appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
 		Name:      depNsName.Name,
 		Namespace: depNsName.Namespace,
 	}}
 
 	op, err := resource.CreateOrUpdate(ctx, r.Client, &dep, func() error {
-		return r.mutateFnWgClientDeployment(&dep, wgClient)
+		return r.mutateFnWgClientDeployment(&dep, wgClient, replica)
 	})
 	if err != nil {
 		klog.Errorf("error while creating/updating deployment %q (operation: %s): %v", depNsName, op, err)
@@ -238,30 +236,35 @@ func (r *WgGatewayClientReconciler) ensureDeployment(ctx context.Context, wgClie
 	return &dep, nil
 }
 
-func (r *WgGatewayClientReconciler) mutateFnWgClientDeployment(deployment *appsv1.Deployment, wgClient *networkingv1beta1.WgGatewayClient) error {
-	// Forge metadata
-	mapsutil.SmartMergeLabels(deployment, wgClient.Spec.Deployment.Metadata.GetLabels())
-	mapsutil.SmartMergeAnnotations(deployment, wgClient.Spec.Deployment.Metadata.GetAnnotations())
-
-	// Forge spec
-	deployment.Spec = wgClient.Spec.Deployment.Spec
-
-	if wgClient.Status.SecretRef != nil {
-		// When no secret reference is provided, we will need to replace the secret name in the deployment manifest with the auto-generated one.
-		for i := range deployment.Spec.Template.Spec.Volumes {
-			if deployment.Spec.Template.Spec.Volumes[i].Name == wireguardVolumeName {
-				deployment.Spec.Template.Spec.Volumes[i].Secret = &corev1.SecretVolumeSource{
-					SecretName: wgClient.Status.SecretRef.Name,
-				}
-				break
+func (r *WgGatewayClientReconciler) mutateFnWgClientDeployment(deployment *appsv1.Deployment, wgClient *networkingv1beta1.WgGatewayClient,
+	replica int32) error {
+	return mutateWgDeployment(deployment, wgClient, r.Scheme, wgClient.Spec.Deployment.Spec, replica, wgClient.Status.SecretRef,
+		func(deployment *appsv1.Deployment) error {
+			// Override the server endpoint for this replica if multiple endpoints are configured.
+			ep := replicaEndpoint(wgClient, replica)
+			if ep == nil {
+				return fmt.Errorf("no endpoint available for gateway client %q replica %d (endpoints: %d, replicas: %d)",
+					wgClient.Name, replica, len(wgClient.Spec.Endpoints), wgClient.Spec.Replicas)
 			}
-		}
-	} else {
-		r.eventRecorder.Event(wgClient, corev1.EventTypeWarning, "MissingSecretRef", "WireGuard keys secret not found")
-	}
+			wireguardContainer := findContainerByName(deployment, "wireguard")
+			if wireguardContainer == nil {
+				return fmt.Errorf("wireguard container not found in deployment for gateway client %q replica %d", wgClient.Name, replica)
+			}
+			if len(ep.Addresses) == 0 {
+				return fmt.Errorf("endpoint for gateway client %q replica %d has no addresses", wgClient.Name, replica)
+			}
 
-	// Set WireGuard client as owner of the deployment
-	return controllerutil.SetControllerReference(wgClient, deployment, r.Scheme)
+			endpointPorts := endpointPortsString(ep)
+			if endpointPorts == "" {
+				return fmt.Errorf("endpoint for gateway client %q replica %d has no ports", wgClient.Name, replica)
+			}
+
+			klog.Infof("Injecting endpoint %s:%s into gateway client %q replica %d",
+				ep.Addresses[0], endpointPorts, wgClient.Name, replica)
+			wireguardContainer.Args = setOrAppendArg(wireguardContainer.Args, "--endpoint-address", ep.Addresses[0])
+			wireguardContainer.Args = setOrAppendArg(wireguardContainer.Args, "--endpoint-ports", endpointPorts)
+			return nil
+		})
 }
 
 func (r *WgGatewayClientReconciler) handleSecretRefStatus(ctx context.Context, wgClient *networkingv1beta1.WgGatewayClient) error {
@@ -269,7 +272,7 @@ func (r *WgGatewayClientReconciler) handleSecretRefStatus(ctx context.Context, w
 	switch {
 	case apierrors.IsNotFound(err):
 		wgClient.Status.SecretRef = nil
-		return nil
+		return fmt.Errorf("WireGuard keys secret not found for gateway client %q", client.ObjectKeyFromObject(wgClient))
 	case err != nil:
 		return err
 	default:
@@ -282,20 +285,38 @@ func (r *WgGatewayClientReconciler) handleSecretRefStatus(ctx context.Context, w
 }
 
 func (r *WgGatewayClientReconciler) handleInternalEndpointStatus(ctx context.Context,
-	wgClient *networkingv1beta1.WgGatewayClient, dep *appsv1.Deployment) error {
-	if dep == nil {
-		wgClient.Status.InternalEndpoint = nil
+	wgClient *networkingv1beta1.WgGatewayClient) error {
+	gwPods, err := listGatewayPods(ctx, r.Client, wgClient.Namespace)
+	if err != nil {
+		return fmt.Errorf("retrieving gateway pods: %w", err)
+	}
+
+	wgClient.Status.InternalEndpoints = forgeInternalEndpoints(gwPods)
+	return nil
+}
+
+// replicaEndpoint returns the server endpoint to use for the given client replica.
+// The API guarantees that the number of endpoints matches the number of replicas,
+// so the replica index maps directly to the endpoint index.
+func replicaEndpoint(wgClient *networkingv1beta1.WgGatewayClient, replica int32) *networkingv1beta1.EndpointStatus {
+	if int(replica) >= len(wgClient.Spec.Endpoints) {
 		return nil
 	}
+	return &wgClient.Spec.Endpoints[int(replica)]
+}
 
-	gwPod, err := listActiveGatewayPod(ctx, r.Client, dep.Namespace)
-	if err != nil {
-		return fmt.Errorf("retrieving active gateway pods: %w", err)
+// endpointPortsString returns the comma-separated list of ports to use for the given endpoint.
+// It prefers the new Ports list and falls back to the deprecated Port field.
+func endpointPortsString(ep *networkingv1beta1.EndpointStatus) string {
+	if len(ep.Ports) > 0 {
+		parts := make([]string, len(ep.Ports))
+		for i, p := range ep.Ports {
+			parts[i] = strconv.Itoa(int(p))
+		}
+		return strings.Join(parts, ",")
 	}
-
-	wgClient.Status.InternalEndpoint = &networkingv1beta1.InternalGatewayEndpoint{
-		IP:   ptr.To(networkingv1beta1.IP(gwPod.Status.PodIP)),
-		Node: &gwPod.Spec.NodeName,
+	if ep.Port != 0 {
+		return strconv.Itoa(int(ep.Port))
 	}
-	return nil
+	return ""
 }

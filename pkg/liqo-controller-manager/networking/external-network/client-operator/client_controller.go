@@ -178,8 +178,13 @@ func (r *ClientReconciler) EnsureGatewayClient(ctx context.Context, gwClient *ne
 		Namespace(gwClient.Namespace), gwClient.Name, func(objChild *unstructured.Unstructured) error {
 		objChild.SetGroupVersionKind(objectKind.GroupVersionKind())
 
+		// Normalize the endpoints for both template rendering and patching. This preserves backward
+		// compatibility with GatewayClient resources created with the deprecated Spec.Endpoint field.
+		clientSpec := gwClient.Spec.DeepCopy()
+		clientSpec.Endpoints = normalizeClientEndpoints(*clientSpec)
+
 		td := templateData{
-			Spec:       gwClient.Spec,
+			Spec:       *clientSpec,
 			Name:       gwClient.Name,
 			Namespace:  gwClient.Namespace,
 			GatewayUID: string(gwClient.UID),
@@ -244,6 +249,13 @@ func (r *ClientReconciler) EnsureGatewayClient(ctx context.Context, gwClient *ne
 			return fmt.Errorf("unable to render the template spec: %w", err)
 		}
 		objChild.Object["spec"] = spec
+
+		// Patch the endpoints directly from the GatewayClient spec, as template rendering cannot
+		// preserve complex array structures. The normalized endpoints already account for the
+		// deprecated Spec.Endpoint field for backward compatibility.
+		if err := patchEndpointsIntoSpec(spec, clientSpec.Endpoints); err != nil {
+			return err
+		}
 		return nil
 	})
 	if err != nil {
@@ -267,11 +279,48 @@ func (r *ClientReconciler) EnsureGatewayClient(ctx context.Context, gwClient *ne
 	if ok && secretRef != nil {
 		gwClient.Status.SecretRef = enutils.ParseRef(*secretRef)
 	}
-	internalEndpoint, ok := enutils.GetIfExists[map[string]interface{}](status, "internalEndpoint")
-	if ok && internalEndpoint != nil {
-		gwClient.Status.InternalEndpoint = enutils.ParseInternalEndpoint(*internalEndpoint)
+	internalEndpoints, ok := enutils.GetIfExists[[]interface{}](status, "internalEndpoints")
+	if ok && internalEndpoints != nil {
+		gwClient.Status.InternalEndpoints = enutils.ParseInternalEndpointList(*internalEndpoints)
 	}
 
+	return nil
+}
+
+// patchEndpointsIntoSpec injects the typed GatewayClient endpoints into the rendered unstructured spec.
+func patchEndpointsIntoSpec(spec interface{}, endpoints []networkingv1beta1.EndpointStatus) error {
+	if len(endpoints) == 0 {
+		klog.V(4).Infof("No endpoints to patch into WgGatewayClient spec")
+		return nil
+	}
+
+	specMap, ok := spec.(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("unable to patch endpoints: rendered spec is not a map")
+	}
+
+	unstructuredEndpoints := make([]interface{}, 0, len(endpoints))
+	for i := range endpoints {
+		endpoint, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&endpoints[i])
+		if err != nil {
+			return fmt.Errorf("unable to convert endpoint %d to unstructured: %w", i, err)
+		}
+		unstructuredEndpoints = append(unstructuredEndpoints, endpoint)
+	}
+	specMap["endpoints"] = unstructuredEndpoints
+	klog.Infof("Patched %d endpoints into WgGatewayClient spec", len(unstructuredEndpoints))
+	return nil
+}
+
+// normalizeClientEndpoints returns the endpoints to use for rendering and patching.
+// It prefers the new Spec.Endpoints slice and falls back to the deprecated Spec.Endpoint field.
+func normalizeClientEndpoints(spec networkingv1beta1.GatewayClientSpec) []networkingv1beta1.EndpointStatus {
+	if len(spec.Endpoints) > 0 {
+		return spec.Endpoints
+	}
+	if len(spec.Endpoint.Addresses) > 0 || spec.Endpoint.Port != 0 || len(spec.Endpoint.Ports) > 0 {
+		return []networkingv1beta1.EndpointStatus{spec.Endpoint}
+	}
 	return nil
 }
 

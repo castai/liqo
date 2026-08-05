@@ -119,7 +119,9 @@ spec:
                 type: object
                 x-kubernetes-map-type: atomic
               endpoint:
-                description: Endpoint specifies the endpoint of the tunnel.
+                description: |-
+                  Endpoint specifies the endpoint of the tunnel.
+                  Deprecated: use Endpoints instead to support multiple gateway replicas.
                 properties:
                   addresses:
                     description: Addresses specifies the addresses of the endpoint.
@@ -149,13 +151,58 @@ spec:
                 x-kubernetes-validations:
                 - message: port and ports are mutually exclusive
                   rule: '!(has(self.port) && has(self.ports))'
-                - message: at least one of port or ports must be set
-                  rule: has(self.port) || (has(self.ports) && size(self.ports) > 0)
                 - message: ports must not contain duplicates
                   rule: '!(has(self.ports)) || self.ports.all(p, self.ports.filter(q,
                     q == p).size() == 1)'
+              endpoints:
+                description: Endpoints specifies the endpoints of the tunnel, one
+                  per gateway replica.
+                items:
+                  description: EndpointStatus defines the observed state of the endpoint.
+                  properties:
+                    addresses:
+                      description: Addresses specifies the addresses of the endpoint.
+                      items:
+                        type: string
+                      type: array
+                    port:
+                      description: |-
+                        Deprecated: use Ports instead
+                        Port specifies the port of the endpoint.
+                      format: int32
+                      type: integer
+                    ports:
+                      description: Ports specifies the ports of the endpoint.
+                      items:
+                        format: int32
+                        type: integer
+                      maxItems: 64
+                      type: array
+                    protocol:
+                      description: Protocol specifies the protocol of the endpoint.
+                      enum:
+                      - TCP
+                      - UDP
+                      type: string
+                  type: object
+                  x-kubernetes-validations:
+                  - message: port and ports are mutually exclusive
+                    rule: '!(has(self.port) && has(self.ports))'
+                  - message: ports must not contain duplicates
+                    rule: '!(has(self.ports)) || self.ports.all(p, self.ports.filter(q,
+                      q == p).size() == 1)'
+                maxItems: 64
+                type: array
               mtu:
                 description: MTU specifies the MTU of the tunnel.
+                type: integer
+              replicas:
+                default: 1
+                description: |-
+                  Replicas specifies the number of gateway deployments to create.
+                  Each deployment has 1 replica and receives a stable replica identifier.
+                format: int32
+                minimum: 1
                 type: integer
               secretRef:
                 description: |-
@@ -174,6 +221,11 @@ spec:
                 type: object
                 x-kubernetes-map-type: atomic
             type: object
+            x-kubernetes-validations:
+            - message: replicas must be at least 1 and the number of endpoints must
+                match the number of replicas
+              rule: 'self.replicas >= 1 && (size(self.endpoints) > 0 ? size(self.endpoints)
+                == self.replicas : self.replicas == 1)'
           status:
             description: GatewayClientStatus defines the observed state of GatewayClient.
             properties:
@@ -221,8 +273,9 @@ spec:
                 type: object
                 x-kubernetes-map-type: atomic
               internalEndpoint:
-                description: InternalEndpoint specifies the endpoint for the internal
-                  network.
+                description: |-
+                  InternalEndpoint specifies the endpoint for the internal network.
+                  Deprecated: use InternalEndpoints instead.
                 properties:
                   ip:
                     description: IP is the IP address of the endpoint.
@@ -233,6 +286,24 @@ spec:
                       running.
                     type: string
                 type: object
+              internalEndpoints:
+                description: InternalEndpoints specifies the endpoints for the internal
+                  network, one per replica.
+                items:
+                  description: InternalGatewayEndpoint defines the endpoint for the
+                    internal network.
+                  properties:
+                    ip:
+                      description: IP is the IP address of the endpoint.
+                      format: ipv4
+                      type: string
+                    node:
+                      description: Node is the name of the node where the endpoint
+                        is running.
+                      type: string
+                  type: object
+                maxItems: 64
+                type: array
               secretRef:
                 description: SecretRef specifies the reference to the secret.
                 properties:

@@ -46,8 +46,8 @@ const (
 	FirewallSubCategoryAllGatewaysTargetValue = "all-gateways"
 )
 
-// ForgeActiveGatewayPodLabels returns the labels for the gateway pod.
-func ForgeActiveGatewayPodLabels() map[string]string {
+// ForgeGatewayPodLabels returns the labels for the gateway pod.
+func ForgeGatewayPodLabels() map[string]string {
 	return map[string]string{
 		GatewayComponentKey: GatewayComponentGateway,
 	}

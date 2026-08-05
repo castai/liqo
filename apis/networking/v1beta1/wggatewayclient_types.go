@@ -36,6 +36,7 @@ var WgGatewayClientGroupResource = schema.GroupResource{Group: GroupVersion.Grou
 var WgGatewayClientGroupVersionResource = GroupVersion.WithResource(WgGatewayClientResource)
 
 // WgGatewayClientSpec defines the desired state of WgGatewayClient.
+// +kubebuilder:validation:XValidation:rule="self.replicas >= 1 && (size(self.endpoints) > 0 ? size(self.endpoints) == self.replicas : self.replicas == 1)",message="replicas must be at least 1 and the number of endpoints must match the number of replicas"
 type WgGatewayClientSpec struct {
 	// Deployment specifies the deployment template for the client.
 	Deployment DeploymentTemplate `json:"deployment"`
@@ -44,6 +45,14 @@ type WgGatewayClientSpec struct {
 	// SecretRef specifies the reference to the secret containing the wireguard configuration.
 	// Leave it empty to let the operator create a new secret.
 	SecretRef corev1.LocalObjectReference `json:"secretRef,omitempty"`
+	// Replicas specifies the number of gateway deployments to create.
+	// Each deployment has 1 replica and receives a stable replica identifier.
+	// +kubebuilder:default=1
+	// +kubebuilder:validation:Minimum=1
+	Replicas int32 `json:"replicas,omitempty"`
+	// Endpoints specifies the remote gateway server endpoints, one per replica.
+	// +kubebuilder:validation:MaxItems=64
+	Endpoints []EndpointStatus `json:"endpoints,omitempty"`
 }
 
 // WgGatewayClientStatus defines the observed state of WgGatewayClient.
@@ -51,7 +60,11 @@ type WgGatewayClientStatus struct {
 	// SecretRef specifies the reference to the secret.
 	SecretRef *corev1.ObjectReference `json:"secretRef,omitempty"`
 	// InternalEndpoint specifies the endpoint for the internal network.
+	// Deprecated: use InternalEndpoints instead.
 	InternalEndpoint *InternalGatewayEndpoint `json:"internalEndpoint,omitempty"`
+	// InternalEndpoints specifies the endpoints for the internal network, one per replica.
+	// +kubebuilder:validation:MaxItems=64
+	InternalEndpoints []InternalGatewayEndpoint `json:"internalEndpoints,omitempty"`
 }
 
 // +kubebuilder:object:root=true
