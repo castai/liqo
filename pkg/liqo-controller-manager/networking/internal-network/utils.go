@@ -12,16 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package forge
+package internalnetwork
 
-import "fmt"
+import networkingv1beta1 "github.com/liqotech/liqo/apis/networking/v1beta1"
 
-// GatewayResourceName generates the name used for the resources created by the gateway.
-func GatewayResourceName(name string) string {
-	return "gw-" + name
-}
-
-// ReplicaResourceName generates the name used for per-replica gateway resources.
-func ReplicaResourceName(name string, replicaID int32) string {
-	return GatewayResourceName(fmt.Sprintf("%s-%d", name, replicaID))
+// FirstInternalEndpoint returns the first available internal endpoint from the slice.
+func FirstInternalEndpoint(endpoints []networkingv1beta1.InternalGatewayEndpoint) *networkingv1beta1.InternalGatewayEndpoint {
+	if len(endpoints) > 0 {
+		return &endpoints[0]
+	}
+	return nil
 }

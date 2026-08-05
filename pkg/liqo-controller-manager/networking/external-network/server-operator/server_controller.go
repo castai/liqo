@@ -268,20 +268,52 @@ func (r *ServerReconciler) EnsureGatewayServer(ctx context.Context, gwServer *ne
 		// the object does not have a status
 		return nil
 	}
-	endpoint, ok := enutils.GetIfExists[map[string]interface{}](status, "endpoint")
-	if ok && endpoint != nil {
-		gwServer.Status.Endpoint = enutils.ParseEndpoint(*endpoint)
+	endpoints, ok := enutils.GetIfExists[[]interface{}](status, "endpoints")
+	if ok && endpoints != nil {
+		gwServer.Status.Endpoints = parseEndpoints(*endpoints)
 	}
 	secretRef, ok := enutils.GetIfExists[map[string]interface{}](status, "secretRef")
 	if ok && secretRef != nil {
 		gwServer.Status.SecretRef = enutils.ParseRef(*secretRef)
 	}
-	internalEndpoint, ok := enutils.GetIfExists[map[string]interface{}](status, "internalEndpoint")
-	if ok && internalEndpoint != nil {
-		gwServer.Status.InternalEndpoint = enutils.ParseInternalEndpoint(*internalEndpoint)
+	internalEndpoints, ok := enutils.GetIfExists[[]interface{}](status, "internalEndpoints")
+	if ok && internalEndpoints != nil {
+		gwServer.Status.InternalEndpoints = parseInternalEndpoints(*internalEndpoints)
 	}
 
 	return nil
+}
+
+// parseEndpoints converts a slice of unstructured endpoints to typed objects.
+func parseEndpoints(in []interface{}) []networkingv1beta1.EndpointStatus {
+	out := make([]networkingv1beta1.EndpointStatus, 0, len(in))
+	for i := range in {
+		m, ok := in[i].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		endpoint := enutils.ParseEndpoint(m)
+		if endpoint != nil {
+			out = append(out, *endpoint)
+		}
+	}
+	return out
+}
+
+// parseInternalEndpoints converts a slice of unstructured internal endpoints to typed objects.
+func parseInternalEndpoints(in []interface{}) []networkingv1beta1.InternalGatewayEndpoint {
+	out := make([]networkingv1beta1.InternalGatewayEndpoint, 0, len(in))
+	for i := range in {
+		m, ok := in[i].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		endpoint := enutils.ParseInternalEndpoint(m)
+		if endpoint != nil {
+			out = append(out, *endpoint)
+		}
+	}
+	return out
 }
 
 // SetupWithManager register the ServerReconciler to the manager.

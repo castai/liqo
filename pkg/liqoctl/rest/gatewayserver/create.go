@@ -83,6 +83,8 @@ func (o *Options) Create(ctx context.Context, options *rest.CreateOptions) *cobr
 		"Force the NodePort of the Gateway Server. Leave empty to let Kubernetes allocate a random NodePort")
 	cmd.Flags().StringVar(&o.LoadBalancerIP, "load-balancer-ip", "",
 		"Force LoadBalancer IP of the Gateway Server. Leave empty to use the one provided by the LoadBalancer provider")
+	cmd.Flags().Int32Var(&o.Replicas, "gw-replicas", 1,
+		"Number of gateway deployments to create, each with 1 replica")
 	cmd.Flags().BoolVar(&o.Wait, "wait", false, "Wait for the Gateway Server to be ready")
 
 	runtime.Must(cmd.MarkFlagRequired("remote-cluster-id"))
@@ -133,7 +135,8 @@ func (o *Options) handleCreate(ctx context.Context) error {
 				return false, err
 			}
 
-			return appliedGwServer.Status.Endpoint != nil && appliedGwServer.Status.ServerRef != nil, nil
+			endpoint := firstEndpoint(&appliedGwServer)
+			return endpoint != nil && appliedGwServer.Status.ServerRef != nil, nil
 		}); err != nil {
 			s.Fail("Unable to wait for gatewayserver to be ready: %v", output.PrettyErr(err))
 			return err
@@ -164,4 +167,12 @@ func (o *Options) output(gwServer *networkingv1beta1.GatewayServer) error {
 	}
 
 	return printer.PrintObj(gwServer, os.Stdout)
+}
+
+// firstEndpoint returns the first available endpoint from the gateway server status.
+func firstEndpoint(gwServer *networkingv1beta1.GatewayServer) *networkingv1beta1.EndpointStatus {
+	if len(gwServer.Status.Endpoints) > 0 {
+		return &gwServer.Status.Endpoints[0]
+	}
+	return nil
 }

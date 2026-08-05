@@ -129,6 +129,10 @@ liqoctl create gatewayclient [flags]
 
 >Addresses of Gateway Server
 
+`--gw-replicas` _int32_:
+
+>Number of gateway deployments to create, each with 1 replica **(default 1)**
+
 `--mtu` _int_:
 
 >MTU of Gateway Client **(default 1340)**
@@ -235,6 +239,10 @@ liqoctl create gatewayserver [flags]
 
 
 ### Options
+`--gw-replicas` _int32_:
+
+>Number of gateway deployments to create, each with 1 replica **(default 1)**
+
 `--load-balancer-ip` _string_:
 
 >Force LoadBalancer IP of the Gateway Server. Leave empty to use the one provided by the LoadBalancer provider

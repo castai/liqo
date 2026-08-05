@@ -244,6 +244,12 @@ func (r *ClientReconciler) EnsureGatewayClient(ctx context.Context, gwClient *ne
 			return fmt.Errorf("unable to render the template spec: %w", err)
 		}
 		objChild.Object["spec"] = spec
+
+		// Patch the endpoints directly from the GatewayClient spec, as template rendering cannot
+		// preserve complex array structures.
+		if err := patchEndpointsIntoSpec(spec, gwClient.Spec.Endpoints); err != nil {
+			return err
+		}
 		return nil
 	})
 	if err != nil {
@@ -267,12 +273,53 @@ func (r *ClientReconciler) EnsureGatewayClient(ctx context.Context, gwClient *ne
 	if ok && secretRef != nil {
 		gwClient.Status.SecretRef = enutils.ParseRef(*secretRef)
 	}
-	internalEndpoint, ok := enutils.GetIfExists[map[string]interface{}](status, "internalEndpoint")
-	if ok && internalEndpoint != nil {
-		gwClient.Status.InternalEndpoint = enutils.ParseInternalEndpoint(*internalEndpoint)
+	internalEndpoints, ok := enutils.GetIfExists[[]interface{}](status, "internalEndpoints")
+	if ok && internalEndpoints != nil {
+		gwClient.Status.InternalEndpoints = parseInternalEndpoints(*internalEndpoints)
 	}
 
 	return nil
+}
+
+// patchEndpointsIntoSpec injects the typed GatewayClient endpoints into the rendered unstructured spec.
+func patchEndpointsIntoSpec(spec interface{}, endpoints []networkingv1beta1.EndpointStatus) error {
+	if len(endpoints) == 0 {
+		klog.V(4).Infof("No endpoints to patch into WgGatewayClient spec")
+		return nil
+	}
+
+	specMap, ok := spec.(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("unable to patch endpoints: rendered spec is not a map")
+	}
+
+	unstructuredEndpoints := make([]interface{}, 0, len(endpoints))
+	for i := range endpoints {
+		endpoint, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&endpoints[i])
+		if err != nil {
+			return fmt.Errorf("unable to convert endpoint %d to unstructured: %w", i, err)
+		}
+		unstructuredEndpoints = append(unstructuredEndpoints, endpoint)
+	}
+	specMap["endpoints"] = unstructuredEndpoints
+	klog.Infof("Patched %d endpoints into WgGatewayClient spec", len(unstructuredEndpoints))
+	return nil
+}
+
+// parseInternalEndpoints converts a slice of unstructured internal endpoints to typed objects.
+func parseInternalEndpoints(in []interface{}) []networkingv1beta1.InternalGatewayEndpoint {
+	out := make([]networkingv1beta1.InternalGatewayEndpoint, 0, len(in))
+	for i := range in {
+		m, ok := in[i].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		endpoint := enutils.ParseInternalEndpoint(m)
+		if endpoint != nil {
+			out = append(out, *endpoint)
+		}
+	}
+	return out
 }
 
 // SetupWithManager register the ClientReconciler to the manager.

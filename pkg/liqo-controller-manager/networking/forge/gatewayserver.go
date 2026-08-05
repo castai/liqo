@@ -50,9 +50,10 @@ type GwServerOptions struct {
 	TemplateNamespace string
 	ServiceType       corev1.ServiceType
 	MTU               int
-	Port              int32
+	Ports             []int32
 	NodePort          *int32
 	LoadBalancerIP    *string
+	Replicas          int32
 }
 
 // GatewayServer forges a GatewayServer.
@@ -93,11 +94,12 @@ func MutateGatewayServer(gwServer *networkingv1beta1.GatewayServer, o *GwServerO
 
 	// Server Endpoint
 	gwServer.Spec.Endpoint = networkingv1beta1.Endpoint{
-		Port:        o.Port,
+		Ports:       o.Ports,
 		ServiceType: o.ServiceType,
 	}
+	gwServer.Spec.Replicas = o.Replicas
 	if o.NodePort != nil && *o.NodePort != 0 {
-		gwServer.Spec.Endpoint.NodePort = o.NodePort
+		gwServer.Spec.Endpoint.NodePorts = []int32{*o.NodePort}
 	}
 	if o.LoadBalancerIP != nil && *o.LoadBalancerIP != "" {
 		gwServer.Spec.Endpoint.LoadBalancerIP = o.LoadBalancerIP

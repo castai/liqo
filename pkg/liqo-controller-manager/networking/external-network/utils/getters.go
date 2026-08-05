@@ -34,6 +34,13 @@ func ParseEndpoint(endpoint map[string]interface{}) *networkingv1beta1.EndpointS
 	if value, ok := endpoint["addresses"]; ok {
 		res.Addresses = interfaceListToList[string](value.([]interface{}))
 	}
+	if value, ok := endpoint["ports"]; ok {
+		ports := value.([]interface{})
+		res.Ports = make([]int32, len(ports))
+		for i, p := range ports {
+			res.Ports[i] = int32(p.(int64))
+		}
+	}
 	if value, ok := endpoint["port"]; ok {
 		res.Port = int32(value.(int64))
 	}

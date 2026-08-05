@@ -30,6 +30,7 @@ type Options struct {
 	PodName         string
 
 	GatewayUID string
+	ReplicaID  int32
 
 	Mode Mode
 

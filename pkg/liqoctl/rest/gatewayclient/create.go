@@ -79,6 +79,8 @@ func (o *Options) Create(ctx context.Context, options *rest.CreateOptions) *cobr
 	cmd.Flags().StringSliceVar(&o.Addresses, "addresses", []string{}, "Addresses of Gateway Server")
 	cmd.Flags().Int32Var(&o.Port, "port", 0, "Port of Gateway Server")
 	cmd.Flags().StringVar(&o.Protocol, "protocol", forge.DefaultProtocol, "Gateway Protocol")
+	cmd.Flags().Int32Var(&o.Replicas, "gw-replicas", 1,
+		"Number of gateway deployments to create, each with 1 replica")
 	cmd.Flags().BoolVar(&o.Wait, "wait", false, "Wait for the Gateway Client to be ready")
 
 	runtime.Must(cmd.MarkFlagRequired("remote-cluster-id"))

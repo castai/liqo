@@ -37,6 +37,7 @@ type Options struct {
 	Port              int32
 	NodePort          int32
 	LoadBalancerIP    string
+	Replicas          int32
 	Proxy             bool
 	Wait              bool
 }
@@ -72,8 +73,9 @@ func (o *Options) getForgeOptions() *forge.GwServerOptions {
 		TemplateNamespace: o.TemplateNamespace,
 		ServiceType:       corev1.ServiceType(o.ServiceType.Value),
 		MTU:               o.MTU,
-		Port:              o.Port,
+		Ports:             []int32{o.Port},
 		NodePort:          ptr.To(o.NodePort),
 		LoadBalancerIP:    ptr.To(o.LoadBalancerIP),
+		Replicas:          o.Replicas,
 	}
 }

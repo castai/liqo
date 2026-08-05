@@ -178,13 +178,17 @@ func (nc *NetworkChecker) collectGatewayInfo(ctx context.Context, cl client.Clie
 		// We are reflecting the status of the peer cluster. So, if locally there is a client, the peer
 		// cluester has a server.
 		peerNetwork.Gateway.Role = GatewayServerType
-		peerNetwork.Gateway.Address = gwClient.Spec.Endpoint.Addresses
-		peerNetwork.Gateway.Port = gwClient.Spec.Endpoint.Port
+		if len(gwClient.Spec.Endpoints) > 0 {
+			endpoint := gwClient.Spec.Endpoints[0]
+			peerNetwork.Gateway.Address = endpoint.Addresses
+			peerNetwork.Gateway.Port = firstPort(&endpoint)
+		}
 	case gwServer != nil:
 		peerNetwork.Gateway.Role = GatewayClientType
-		if gwServer.Status.Endpoint != nil {
-			peerNetwork.Gateway.Address = gwServer.Status.Endpoint.Addresses
-			peerNetwork.Gateway.Port = gwServer.Status.Endpoint.Port
+		endpoint := firstEndpoint(gwServer)
+		if endpoint != nil {
+			peerNetwork.Gateway.Address = endpoint.Addresses
+			peerNetwork.Gateway.Port = firstPort(endpoint)
 		}
 	default:
 		return fmt.Errorf("no gateways found")
@@ -199,4 +203,20 @@ func joinCidrs(cidrs []networkingv1beta1.CIDR) string {
 		cidrsString[i] = cidrs[i].String()
 	}
 	return strings.Join(cidrsString, ",")
+}
+
+// firstEndpoint returns the first available endpoint from the gateway server status.
+func firstEndpoint(gwServer *networkingv1beta1.GatewayServer) *networkingv1beta1.EndpointStatus {
+	if len(gwServer.Status.Endpoints) > 0 {
+		return &gwServer.Status.Endpoints[0]
+	}
+	return nil
+}
+
+// firstPort returns the first available port from the endpoint, preferring Ports over the deprecated Port.
+func firstPort(endpoint *networkingv1beta1.EndpointStatus) int32 {
+	if len(endpoint.Ports) > 0 {
+		return endpoint.Ports[0]
+	}
+	return endpoint.Port
 }

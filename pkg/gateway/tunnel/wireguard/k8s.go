@@ -19,6 +19,7 @@ import (
 	"fmt"
 
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -87,9 +88,19 @@ func CreateKeysSecret(ctx context.Context, cl client.Client, opts *gateway.Optio
 // EnsureConnection creates or updates the connection resource.
 func EnsureConnection(ctx context.Context, cl client.Client, scheme *runtime.Scheme, opts *Options) error {
 	conn := &networkingv1beta1.Connection{ObjectMeta: metav1.ObjectMeta{
-		Name:      forge.GatewayResourceName(opts.GwOptions.Name),
+		Name:      forge.ReplicaResourceName(opts.GwOptions.Name, opts.GwOptions.ReplicaID),
 		Namespace: opts.GwOptions.Namespace,
 	}}
+
+	// Retrieve the per-replica Deployment before creating/updating the Connection,
+	// so that it can be set as the owner inside the CreateOrUpdate closure.
+	replicaName := forge.ReplicaResourceName(opts.GwOptions.Name, opts.GwOptions.ReplicaID)
+	nsName := types.NamespacedName{Name: replicaName, Namespace: opts.GwOptions.Namespace}
+
+	var deployment appsv1.Deployment
+	if err := cl.Get(ctx, nsName, &deployment); err != nil {
+		return fmt.Errorf("getting owner deployment %q: %w", nsName, err)
+	}
 
 	op, err := resource.CreateOrUpdate(ctx, cl, conn, func() error {
 		if conn.Labels == nil {
@@ -97,9 +108,6 @@ func EnsureConnection(ctx context.Context, cl client.Client, scheme *runtime.Sch
 		}
 		conn.Labels[string(consts.RemoteClusterID)] = opts.GwOptions.RemoteClusterID
 
-		if err := gateway.SetOwnerReferenceWithMode(opts.GwOptions, conn, scheme); err != nil {
-			return err
-		}
 		conn.Spec.GatewayRef.APIVersion = networkingv1beta1.GroupVersion.String()
 		conn.Spec.GatewayRef.Name = opts.GwOptions.Name
 		conn.Spec.GatewayRef.Namespace = opts.GwOptions.Namespace
@@ -112,7 +120,10 @@ func EnsureConnection(ctx context.Context, cl client.Client, scheme *runtime.Sch
 			conn.Spec.Type = networkingv1beta1.ConnectionTypeClient
 			conn.Spec.GatewayRef.Kind = networkingv1beta1.WgGatewayClientKind
 		}
-		return nil
+
+		// Ensure the Connection is owned by the per-replica Deployment
+		// so that scaling down the gateway automatically garbage-collects stale Connections.
+		return controllerutil.SetOwnerReference(&deployment, conn, scheme)
 	})
 	if err != nil {
 		return fmt.Errorf("creating or updating the connection: %w", err)
@@ -123,7 +134,9 @@ func EnsureConnection(ctx context.Context, cl client.Client, scheme *runtime.Sch
 
 	if conn.Status.Value == "" {
 		conn.Status.Value = networkingv1beta1.Connecting
-		return cl.Status().Update(ctx, conn)
+		if err := cl.Status().Update(ctx, conn); err != nil {
+			return fmt.Errorf("updating connection status: %w", err)
+		}
 	}
 
 	return nil
