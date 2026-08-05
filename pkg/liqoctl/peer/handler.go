@@ -59,6 +59,7 @@ type Options struct {
 	ClientConnectAddress        string
 	ClientConnectPort           int32
 	MTU                         int
+	Replicas                    int32
 
 	// Authentication options
 	CreateResourceSlice bool
@@ -158,6 +159,7 @@ func ensureNetworking(ctx context.Context, o *Options) error {
 		ClientConnectPort:       o.ClientConnectPort,
 
 		MTU:                o.MTU,
+		Replicas:           o.Replicas,
 		DisableSharingKeys: false,
 	}
 

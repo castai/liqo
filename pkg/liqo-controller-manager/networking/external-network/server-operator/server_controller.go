@@ -268,17 +268,17 @@ func (r *ServerReconciler) EnsureGatewayServer(ctx context.Context, gwServer *ne
 		// the object does not have a status
 		return nil
 	}
-	endpoint, ok := enutils.GetIfExists[map[string]interface{}](status, "endpoint")
-	if ok && endpoint != nil {
-		gwServer.Status.Endpoint = enutils.ParseEndpoint(*endpoint)
+	endpoints, ok := enutils.GetIfExists[[]interface{}](status, "endpoints")
+	if ok && endpoints != nil {
+		gwServer.Status.Endpoints = enutils.ParseEndpointList(*endpoints)
 	}
 	secretRef, ok := enutils.GetIfExists[map[string]interface{}](status, "secretRef")
 	if ok && secretRef != nil {
 		gwServer.Status.SecretRef = enutils.ParseRef(*secretRef)
 	}
-	internalEndpoint, ok := enutils.GetIfExists[map[string]interface{}](status, "internalEndpoint")
-	if ok && internalEndpoint != nil {
-		gwServer.Status.InternalEndpoint = enutils.ParseInternalEndpoint(*internalEndpoint)
+	internalEndpoints, ok := enutils.GetIfExists[[]interface{}](status, "internalEndpoints")
+	if ok && internalEndpoints != nil {
+		gwServer.Status.InternalEndpoints = enutils.ParseInternalEndpointList(*internalEndpoints)
 	}
 
 	return nil

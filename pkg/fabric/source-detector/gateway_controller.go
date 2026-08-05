@@ -108,7 +108,7 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 func (r *GatewayReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	filterByLabelsGatewayPods, err := predicate.LabelSelectorPredicate(
 		metav1.LabelSelector{
-			MatchLabels: gateway.ForgeActiveGatewayPodLabels(),
+			MatchLabels: gateway.ForgeGatewayPodLabels(),
 		},
 	)
 	if err != nil {

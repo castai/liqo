@@ -328,12 +328,15 @@ func FakeGatewayServer(remoteClusterID string) *networkingv1beta1.GatewayServer 
 				ServiceType: "fake-service-type",
 				Port:        1234,
 			},
+			Replicas: 1,
 		},
 		Status: networkingv1beta1.GatewayServerStatus{
-			Endpoint: &networkingv1beta1.EndpointStatus{
-				Addresses: []string{"fake-address"},
-				Port:      1234,
-				Protocol:  ptr.To(corev1.ProtocolTCP),
+			Endpoints: []networkingv1beta1.EndpointStatus{
+				{
+					Addresses: []string{"fake-address"},
+					Ports:     []int32{1234},
+					Protocol:  ptr.To(corev1.ProtocolTCP),
+				},
 			},
 		},
 	}
@@ -351,11 +354,14 @@ func FakeGatewayClient(remoteClusterID string) *networkingv1beta1.GatewayClient 
 		},
 		Spec: networkingv1beta1.GatewayClientSpec{
 			MTU: 1500,
-			Endpoint: networkingv1beta1.EndpointStatus{
-				Addresses: []string{"fake-address"},
-				Port:      1234,
-				Protocol:  ptr.To(corev1.ProtocolTCP),
+			Endpoints: []networkingv1beta1.EndpointStatus{
+				{
+					Addresses: []string{"fake-address"},
+					Ports:     []int32{1234},
+					Protocol:  ptr.To(corev1.ProtocolTCP),
+				},
 			},
+			Replicas: 1,
 		},
 	}
 }
