@@ -118,7 +118,7 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 // SetupWithManager register the PodReconciler to the manager.
 func (r *PodReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	p, err := predicate.LabelSelectorPredicate(v1.LabelSelector{
-		MatchLabels: gateway.ForgeActiveGatewayPodLabels(),
+		MatchLabels: gateway.ForgeGatewayPodLabels(),
 	})
 	if err != nil {
 		return err

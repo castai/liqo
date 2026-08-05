@@ -16,6 +16,7 @@ package network
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -58,6 +59,7 @@ type Options struct {
 	ClientConnectPort int32
 
 	MTU                int
+	Replicas           int32
 	DisableSharingKeys bool
 }
 
@@ -189,17 +191,22 @@ func (o *Options) RunConnect(ctx context.Context) error {
 
 	// By default address and port used by the GatewayClient are the ones written in the endpoint field of the status of the GatewayServer,
 	// unless address or port are manually overwritten
-	endpoint := gwServer.Status.Endpoint
-	if o.ClientConnectAddress != "" {
-		endpoint.Addresses = []string{o.ClientConnectAddress}
+	serverEndpoints := collectEndpoints(gwServer)
+	if len(serverEndpoints) == 0 {
+		return fmt.Errorf("gateway server %q has no endpoint status", gwServer.Name)
 	}
-
-	if o.ClientConnectPort != 0 {
-		endpoint.Port = o.ClientConnectPort
+	for i := range serverEndpoints {
+		if o.ClientConnectAddress != "" {
+			serverEndpoints[i].Addresses = []string{o.ClientConnectAddress}
+		}
+		if o.ClientConnectPort != 0 {
+			serverEndpoints[i].Port = 0
+			serverEndpoints[i].Ports = []int32{o.ClientConnectPort}
+		}
 	}
 
 	gwClient, err := cluster1.EnsureGatewayClient(ctx,
-		o.newGatewayClientForgeOptions(o.LocalFactory.KubeClient, cluster2.localClusterID, endpoint))
+		o.newGatewayClientForgeOptions(o.LocalFactory.KubeClient, cluster2.localClusterID, serverEndpoints))
 	if err != nil {
 		return err
 	}
@@ -245,21 +252,11 @@ func (o *Options) RunConnect(ctx context.Context) error {
 	}
 
 	if o.Wait {
-		// Wait for Connections on both cluster to be created.
-		conn2, err := cluster2.waiter.ForConnection(ctx, gwServer.Namespace, cluster1.localClusterID)
-		if err != nil {
+		// Wait for all per-replica Connections on both clusters to be established.
+		if err := cluster1.waiter.ForConnectionsEstablished(ctx, gwClient, cluster2.localClusterID); err != nil {
 			return err
 		}
-		conn1, err := cluster1.waiter.ForConnection(ctx, gwClient.Namespace, cluster2.localClusterID)
-		if err != nil {
-			return err
-		}
-
-		// Wait for Connections on both cluster cluster to be established
-		if err := cluster1.waiter.ForConnectionEstablished(ctx, conn1); err != nil {
-			return err
-		}
-		if err := cluster2.waiter.ForConnectionEstablished(ctx, conn2); err != nil {
+		if err := cluster2.waiter.ForConnectionsEstablished(ctx, gwServer, cluster1.localClusterID); err != nil {
 			return err
 		}
 	}
@@ -353,14 +350,15 @@ func (o *Options) newGatewayServerForgeOptions(kubeClient kubernetes.Interface, 
 		TemplateNamespace: o.ServerTemplateNamespace,
 		ServiceType:       corev1.ServiceType(o.ServerServiceType.Value),
 		MTU:               o.MTU,
-		Port:              o.ServerServicePort,
+		Ports:             []int32{o.ServerServicePort},
 		NodePort:          ptr.To(o.ServerServiceNodePort),
 		LoadBalancerIP:    ptr.To(o.ServerServiceLoadBalancerIP),
+		Replicas:          o.Replicas,
 	}
 }
 
 func (o *Options) newGatewayClientForgeOptions(kubeClient kubernetes.Interface, remoteClusterID liqov1beta1.ClusterID,
-	serverEndpoint *networkingv1beta1.EndpointStatus) *forge.GwClientOptions {
+	serverEndpoints []networkingv1beta1.EndpointStatus) *forge.GwClientOptions {
 	return &forge.GwClientOptions{
 		KubeClient:        kubeClient,
 		RemoteClusterID:   remoteClusterID,
@@ -368,8 +366,18 @@ func (o *Options) newGatewayClientForgeOptions(kubeClient kubernetes.Interface, 
 		TemplateName:      o.ClientTemplateName,
 		TemplateNamespace: o.ClientTemplateNamespace,
 		MTU:               o.MTU,
-		Addresses:         serverEndpoint.Addresses,
-		Port:              serverEndpoint.Port,
-		Protocol:          string(*serverEndpoint.Protocol),
+		Endpoints:         serverEndpoints,
+		Replicas:          o.Replicas,
 	}
+}
+
+// collectEndpoints returns all available endpoints from the gateway server status.
+func collectEndpoints(gwServer *networkingv1beta1.GatewayServer) []networkingv1beta1.EndpointStatus {
+	if len(gwServer.Status.Endpoints) > 0 {
+		return gwServer.Status.Endpoints
+	}
+	if gwServer.Status.Endpoint != nil {
+		return []networkingv1beta1.EndpointStatus{*gwServer.Status.Endpoint}
+	}
+	return nil
 }

@@ -42,6 +42,8 @@ const (
 
 	// FlagNameGatewayUID is the UID of the Gateway resource.
 	FlagNameGatewayUID FlagName = "gateway-uid"
+	// FlagNameReplicaID is the stable identifier of the gateway replica.
+	FlagNameReplicaID FlagName = "replica-id"
 
 	// FlagNameMode is the mode in which the gateway is configured.
 	FlagNameMode FlagName = "mode"
@@ -97,6 +99,7 @@ func InitFlags(flagset *pflag.FlagSet, opts *Options) {
 	flagset.StringVar(&opts.PodName, FlagNamePodName.String(), "", "Pod name")
 
 	flagset.StringVar(&opts.GatewayUID, FlagNameGatewayUID.String(), "", "Parent gateway resource UID")
+	flagset.Int32Var(&opts.ReplicaID, FlagNameReplicaID.String(), 0, "Stable identifier of the gateway replica")
 
 	flagset.Var(&opts.Mode, FlagNameMode.String(), "Parent gateway mode")
 

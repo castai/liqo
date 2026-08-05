@@ -1,4 +1,4 @@
-{{- $templateConfig := (merge (dict "name" "wireguard-client" "module" "networking" "isGwTemplate" true) .) -}}
+{{- $templateConfig := (merge (dict "name" "wireguard-client" "module" "networking") .) -}}
 {{- $gatewayConfig := (merge (dict "name" "gateway" "module" "networking" "version" .Values.networking.gatewayTemplates.container.gateway.image.version) .) -}}
 {{- $wireguardConfig := (merge (dict "name" "gateway-wireguard" "module" "networking" "version" .Values.networking.gatewayTemplates.container.wireguard.image.version) .) -}}
 {{- $geneveConfig := (merge (dict "name" "gateway-geneve" "module" "networking" "version" .Values.networking.gatewayTemplates.container.geneve.image.version) .) -}}
@@ -19,13 +19,13 @@ spec:
     metadata:
       {{- include "liqo.metadataTemplate" $templateConfig | nindent 6 }}
     spec:
+      replicas: "{{"{{ .Spec.Replicas }}"}}"
       secretRef:
         name: "{{"{{ .Spec.SecretRef.Name }}"}}"
       deployment:
         metadata:
           {{- include "liqo.metadataTemplate" $templateConfig | nindent 10 }}
         spec:
-          replicas: {{ .Values.networking.gatewayTemplates.replicas }}
           strategy:
             type: Recreate
           selector:
@@ -91,7 +91,7 @@ spec:
                 {{- end }}
                 - --enable-nft-monitor={{ .Values.networking.gatewayTemplates.nftablesMonitor }}
                 - --enable-route-monitor={{ .Values.networking.gatewayTemplates.routeMonitor }}
-                - --enable-multipath-hash-policy={{ printf "{{ if gt (len .Spec.Endpoint.Ports) 1 }}true{{ else }}false{{ end }}" }}
+                - --enable-multipath-hash-policy=true
                 {{- if .Values.networking.gatewayTemplates.container.gateway.extraArgs }}
                 {{- toYaml .Values.networking.gatewayTemplates.container.gateway.extraArgs | nindent 16 }}
                 {{- end }}
@@ -137,8 +137,6 @@ spec:
                 - --gateway-uid={{"{{ .GatewayUID }}"}}
                 - --mode=client
                 - --mtu={{"{{ .Spec.MTU }}"}}
-                - --endpoint-address={{"{{ index .Spec.Endpoint.Addresses 0 }}"}}
-                - --endpoint-ports={{ printf "{{ if .Spec.Endpoint.Ports }}{{ range $i, $p := .Spec.Endpoint.Ports }}{{ if $i }},{{ end }}{{ $p }}{{ end }}{{ else }}{{ .Spec.Endpoint.Port }}{{ end }}" }}
                 {{- if .Values.metrics.enabled }}
                 - --metrics-address=:8084
                 {{- end }}
@@ -162,7 +160,7 @@ spec:
                     add:
                     - NET_ADMIN
                     - NET_RAW
-                    - "{{ "{{ if gt (len .Spec.Endpoint.Ports) 1 }}SYS_ADMIN{{ else }}NET_RAW{{ end }}" }}"
+                    - SYS_ADMIN
                   {{ if .Values.networking.gatewayTemplates.wireguard.implementation | eq "userspace" }}
                   privileged: true
                   {{ end }}

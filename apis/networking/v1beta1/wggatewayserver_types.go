@@ -72,6 +72,7 @@ type Metrics struct {
 }
 
 // WgGatewayServerSpec defines the desired state of WgGatewayServer.
+// +kubebuilder:validation:XValidation:rule="self.replicas >= 1",message="replicas must be at least 1"
 type WgGatewayServerSpec struct {
 	// Service specifies the service template for the server.
 	Service ServiceTemplate `json:"service"`
@@ -82,6 +83,11 @@ type WgGatewayServerSpec struct {
 	// SecretRef specifies the reference to the secret containing the wireguard configuration.
 	// Leave it empty to let the operator create a new secret.
 	SecretRef corev1.LocalObjectReference `json:"secretRef,omitempty"`
+	// Replicas specifies the number of gateway deployments to create.
+	// Each deployment has 1 replica and receives a stable replica identifier.
+	// +kubebuilder:default=1
+	// +kubebuilder:validation:Minimum=1
+	Replicas int32 `json:"replicas,omitempty"`
 }
 
 // WgGatewayServerStatus defines the observed state of WgGatewayServer.
@@ -89,9 +95,17 @@ type WgGatewayServerStatus struct {
 	// SecretRef specifies the reference to the secret.
 	SecretRef *corev1.ObjectReference `json:"secretRef,omitempty"`
 	// Endpoint specifies the endpoint of the server.
+	// Deprecated: use Endpoints instead.
 	Endpoint *EndpointStatus `json:"endpoint,omitempty"`
+	// Endpoints specifies the endpoints of the server, one per replica.
+	// +kubebuilder:validation:MaxItems=64
+	Endpoints []EndpointStatus `json:"endpoints,omitempty"`
 	// InternalEndpoint specifies the endpoint for the internal network.
+	// Deprecated: use InternalEndpoints instead.
 	InternalEndpoint *InternalGatewayEndpoint `json:"internalEndpoint,omitempty"`
+	// InternalEndpoints specifies the endpoints for the internal network, one per replica.
+	// +kubebuilder:validation:MaxItems=64
+	InternalEndpoints []InternalGatewayEndpoint `json:"internalEndpoints,omitempty"`
 }
 
 // +kubebuilder:object:root=true

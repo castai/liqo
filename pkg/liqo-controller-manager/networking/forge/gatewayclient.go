@@ -45,9 +45,8 @@ type GwClientOptions struct {
 	TemplateName      string
 	TemplateNamespace string
 	MTU               int
-	Addresses         []string
-	Port              int32
-	Protocol          string
+	Endpoints         []networkingv1beta1.EndpointStatus
+	Replicas          int32
 }
 
 // GatewayClient forges a GatewayClient.
@@ -86,12 +85,9 @@ func MutateGatewayClient(gwClient *networkingv1beta1.GatewayClient, o *GwClientO
 	// MTU
 	gwClient.Spec.MTU = o.MTU
 
-	// Server Endpoint
-	gwClient.Spec.Endpoint = networkingv1beta1.EndpointStatus{
-		Addresses: o.Addresses,
-		Port:      o.Port,
-		Protocol:  ptr.To(corev1.Protocol(o.Protocol)),
-	}
+	// Server Endpoints
+	gwClient.Spec.Endpoints = o.Endpoints
+	gwClient.Spec.Replicas = o.Replicas
 
 	// Client Template Reference
 	gvr, err := enutils.ParseGroupVersionResource(o.GatewayType)

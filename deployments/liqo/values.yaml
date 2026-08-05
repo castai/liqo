@@ -105,8 +105,6 @@ networking:
       # -- Preserve the existing peer endpoint when configuring the server-side WireGuard device.
       # This preserves the discovered endpoint across PublicKey reconciliations.
       preserveClientEndpoint: true
-    # -- Set the number of replicas for the gateway deployments
-    replicas: 1
     # -- Set the options to configure the gateway ping used to check connection
     ping:
       # -- Set the number of consecutive pings that must fail to consider the connection as lost

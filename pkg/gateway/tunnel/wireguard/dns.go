@@ -42,7 +42,8 @@ import (
 func StartDNSRoutine(ctx context.Context, ch chan event.GenericEvent, opts *Options) {
 	// Try to solve the DNS every 5 seconds until the DNS is resolved for 10 minutes.
 	// In some cases (like AWS LoadBalancer) the DNS is not immediatlly populated or can contain not working IPs.
-	timeout, _ := context.WithTimeoutCause(ctx, time.Minute*10, context.DeadlineExceeded)
+	timeout, cancel := context.WithTimeoutCause(ctx, time.Minute*10, context.DeadlineExceeded)
+	defer cancel()
 	err := wait.PollUntilContextCancel(timeout, time.Second*5, true, forgeResolveCallback(opts, ch))
 	if err != nil && !errors.Is(err, context.DeadlineExceeded) {
 		klog.Error(err)

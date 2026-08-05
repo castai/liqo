@@ -138,11 +138,11 @@ var _ = Describe("Liqo E2E", func() {
 
 				time.Sleep(time.Second * 60)
 
-				// Check if there is only one active gateway pod per remote cluster.
+				// Check the number of gateway pods per remote cluster.
 				for i := range testContext.Clusters {
-					numActiveGateway := testContext.Clusters[i].NumPeeredConsumers + testContext.Clusters[i].NumPeeredProviders
+					numGatewayPods := testContext.Clusters[i].NumPeeredConsumers + testContext.Clusters[i].NumPeeredProviders
 					Eventually(func() error {
-						return checkUniqueActiveGatewayPod(testContext.Clusters[i].ControllerClient, numActiveGateway)
+						return checkGatewayPods(testContext.Clusters[i].ControllerClient, numGatewayPods)
 					}, timeout, interval).Should(Succeed())
 				}
 
@@ -164,11 +164,11 @@ var _ = Describe("Liqo E2E", func() {
 
 					restartTime := time.Now()
 
-					// Check if there is only one active gateway pod per remote cluster.
+					// Check the number of gateway pods per remote cluster.
 					for j := range testContext.Clusters {
-						numActiveGateway := testContext.Clusters[j].NumPeeredConsumers + testContext.Clusters[j].NumPeeredProviders
+						numGatewayPods := testContext.Clusters[j].NumPeeredConsumers + testContext.Clusters[j].NumPeeredProviders
 						Eventually(func() error {
-							return checkUniqueActiveGatewayPod(testContext.Clusters[j].ControllerClient, numActiveGateway)
+							return checkGatewayPods(testContext.Clusters[j].ControllerClient, numGatewayPods)
 						}, timeout, interval).Should(Succeed())
 					}
 
@@ -370,9 +370,9 @@ func checkConnectionsReady(cl client.Client, restartTime time.Time) error {
 	return nil
 }
 
-// checkUniqueActiveGatewayPod checks if there is only one active gateway pod.
-func checkUniqueActiveGatewayPod(cl client.Client, numActiveGateway int) error {
-	// Sleep few seconds to be sure that the new leader is elected.
+// checkGatewayPods checks that the number of gateway pods matches the expected count.
+func checkGatewayPods(cl client.Client, numGatewayPods int) error {
+	// Sleep few seconds to be sure that the gateway pods are ready.
 	time.Sleep(2 * time.Second)
 
 	podList := &corev1.PodList{}
@@ -381,11 +381,11 @@ func checkUniqueActiveGatewayPod(cl client.Client, numActiveGateway int) error {
 			gateway.GatewayComponentKey: gateway.GatewayComponentGateway,
 		}),
 	}); err != nil {
-		return fmt.Errorf("unable to list active gateway pods: %w", err)
+		return fmt.Errorf("unable to list gateway pods: %w", err)
 	}
 
-	if len(podList.Items) != numActiveGateway {
-		return fmt.Errorf("expected %d active gateway pod, got %d", numActiveGateway, len(podList.Items))
+	if len(podList.Items) != numGatewayPods {
+		return fmt.Errorf("expected %d gateway pods, got %d", numGatewayPods, len(podList.Items))
 	}
 
 	return nil
