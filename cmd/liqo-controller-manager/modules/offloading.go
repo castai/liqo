@@ -40,6 +40,7 @@ import (
 	liqostorageprovisioner "github.com/liqotech/liqo/pkg/liqo-controller-manager/offloading/storageprovisioner"
 	virtualnodectrl "github.com/liqotech/liqo/pkg/liqo-controller-manager/offloading/virtualnode-controller"
 	tenantnamespace "github.com/liqotech/liqo/pkg/tenantNamespace"
+	argsutils "github.com/liqotech/liqo/pkg/utils/args"
 	"github.com/liqotech/liqo/pkg/utils/csr"
 )
 
@@ -57,6 +58,10 @@ type OffloadingOption struct {
 	ShadowEndpointSliceWorkers  int
 	DenyDirectConnections       bool
 	ResyncPeriod                time.Duration
+	LiqoNamespace               string
+	LocalPodCIDRs               []string
+	VkOptsDefaultTemplate       string
+	UpdateVirtualNodes          bool
 }
 
 // NewOffloadingOption creates a new OffloadingOption with the given parameters.
@@ -75,17 +80,30 @@ func NewOffloadingOption(clientset *kubernetes.Clientset, localClusterID liqov1b
 		ShadowEndpointSliceWorkers:  opts.ShadowEndpointSliceWorkers,
 		DenyDirectConnections:       opts.DenyDirectConnections,
 		ResyncPeriod:                opts.ResyncPeriod,
+		LiqoNamespace:               opts.LiqoNamespace,
+		LocalPodCIDRs:               opts.LocalPodCIDRs,
+		VkOptsDefaultTemplate:       opts.VkOptsDefaultTemplate,
+		UpdateVirtualNodes:          opts.UpdateVirtualNodes,
 	}
 }
 
 // SetupOffloadingModule setup the offloading module and initializes its controllers.
 func SetupOffloadingModule(ctx context.Context, mgr manager.Manager, opts *OffloadingOption) error {
+	vkOptsDefaultTemplateRef, err := argsutils.GetObjectRefFromNamespacedName(opts.VkOptsDefaultTemplate)
+	if err != nil {
+		return fmt.Errorf("invalid namespaced name for virtual-kubelet options template %s: %w", opts.VkOptsDefaultTemplate, err)
+	}
+
 	virtualNodeReconciler, err := virtualnodectrl.NewVirtualNodeReconciler(
 		ctx,
 		mgr.GetClient(),
 		mgr.GetScheme(),
 		mgr.GetEventRecorderFor("virtualnode-controller"),
 		opts.LocalClusterID,
+		opts.LiqoNamespace,
+		opts.LocalPodCIDRs,
+		vkOptsDefaultTemplateRef,
+		opts.UpdateVirtualNodes,
 		opts.NamespaceManager,
 	)
 	if err != nil {
