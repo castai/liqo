@@ -33,6 +33,7 @@ import (
 	liqov1beta1 "github.com/liqotech/liqo/apis/core/v1beta1"
 	offloadingv1beta1 "github.com/liqotech/liqo/apis/offloading/v1beta1"
 	liqoconst "github.com/liqotech/liqo/pkg/consts"
+	vkforge "github.com/liqotech/liqo/pkg/vkMachinery/forge"
 )
 
 func ForgeFakeVirtualNode(nameVirtualNode, tenantNamespaceName string,
