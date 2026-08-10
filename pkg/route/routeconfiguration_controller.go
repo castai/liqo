@@ -186,6 +186,11 @@ func (r *RouteConfigurationReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, fmt.Errorf("ensuring table presence: %w", err)
 	}
 
+	// existingRules/existingRoutes were snapshotted before CleanRules/CleanRoutes ran, so they no
+	// longer reflect kernel state. Reusing them here is still correct: Clean only deletes entries
+	// NOT in the desired spec, while Ensure*Presence only looks up entries that ARE in the desired
+	// spec, so the two never operate on the same rows and the stale snapshot cannot cause a wrong
+	// exists/not-exists result. Re-fetching here would just be a redundant netlink list.
 	for i := range routeconfiguration.Spec.Table.Rules {
 		if err = EnsureRulePresence(&routeconfiguration.Spec.Table.Rules[i], tableID, existingRules); err != nil {
 			return ctrl.Result{}, fmt.Errorf("ensuring rule presence: %w", err)
