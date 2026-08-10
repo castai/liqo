@@ -36,7 +36,10 @@ func EnsureRoutesPresence(routes []networkingv1beta1.Route, tableID uint32, exis
 		if err != nil {
 			return err
 		}
-		existingroute, exists := FindRouteInList(&routes[i], existing)
+		existingroute, exists, err := FindRouteInList(&routes[i], existing)
+		if err != nil {
+			return err
+		}
 		if exists {
 			if !IsEqualRoute(route, existingroute) {
 				if err := netlink.RouteReplace(route); err != nil {
@@ -64,7 +67,10 @@ func EnsureRoutesAbsence(routes []networkingv1beta1.Route, existing []netlink.Ro
 		if routes[i].Dst == nil {
 			continue
 		}
-		existingRoute, exists := FindRouteInList(&routes[i], existing)
+		existingRoute, exists, err := FindRouteInList(&routes[i], existing)
+		if err != nil {
+			return fmt.Errorf("checking route existence: %w", err)
+		}
 		if exists {
 			if err := netlink.RouteDel(existingRoute); err != nil {
 				return fmt.Errorf("deleting route: %w", err)
@@ -75,15 +81,16 @@ func EnsureRoutesAbsence(routes []networkingv1beta1.Route, existing []netlink.Ro
 }
 
 // FindRouteInList searches for a route matching the given spec within the provided list of existing routes.
-// It returns the matching netlink.Route and true if found, or nil and false otherwise.
-func FindRouteInList(route *networkingv1beta1.Route, existing []netlink.Route) (*netlink.Route, bool) {
+// It returns the matching netlink.Route and true if found, or an error if more than one route matches.
+func FindRouteInList(route *networkingv1beta1.Route, existing []netlink.Route) (*netlink.Route, bool, error) {
 	if route.Dst == nil {
-		return nil, false
+		return nil, false, nil
 	}
 	_, dst, err := net.ParseCIDR(route.Dst.String())
 	if err != nil {
-		return nil, false
+		return nil, false, err
 	}
+	var found *netlink.Route
 	for i := range existing {
 		if existing[i].Dst == nil {
 			continue
@@ -91,9 +98,15 @@ func FindRouteInList(route *networkingv1beta1.Route, existing []netlink.Route) (
 		if existing[i].Dst.String() != dst.String() {
 			continue
 		}
-		return &existing[i], true
+		if found != nil {
+			return nil, false, fmt.Errorf("multiple routes found with same destination %s", dst.String())
+		}
+		found = &existing[i]
 	}
-	return nil, false
+	if found == nil {
+		return nil, false, nil
+	}
+	return found, true, nil
 }
 
 // GetRoutesByTableID returns all the routes associated with the given table ID.
