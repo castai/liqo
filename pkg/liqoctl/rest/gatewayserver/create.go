@@ -174,5 +174,5 @@ func firstEndpoint(gwServer *networkingv1beta1.GatewayServer) *networkingv1beta1
 	if len(gwServer.Status.Endpoints) > 0 {
 		return &gwServer.Status.Endpoints[0]
 	}
-	return nil
+	return gwServer.Status.Endpoint
 }

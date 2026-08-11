@@ -258,6 +258,10 @@ func (w *Waiter) ForGatewayServerStatusEndpoint(ctx context.Context, gwServer *n
 			return false, client.IgnoreNotFound(err)
 		}
 		endpoints := gwServer.Status.Endpoints
+		// Fallback to the deprecated single endpoint for resources created with the old API.
+		if len(endpoints) == 0 && gwServer.Status.Endpoint != nil {
+			endpoints = []networkingv1beta1.EndpointStatus{*gwServer.Status.Endpoint}
+		}
 		if len(endpoints) < int(gatewayReplicas(gwServer)) {
 			return false, nil
 		}
@@ -563,5 +567,5 @@ func firstEndpoint(gwServer *networkingv1beta1.GatewayServer) *networkingv1beta1
 	if len(gwServer.Status.Endpoints) > 0 {
 		return &gwServer.Status.Endpoints[0]
 	}
-	return nil
+	return gwServer.Status.Endpoint
 }

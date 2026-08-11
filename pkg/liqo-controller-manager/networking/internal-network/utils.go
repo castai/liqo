@@ -16,10 +16,12 @@ package internalnetwork
 
 import networkingv1beta1 "github.com/liqotech/liqo/apis/networking/v1beta1"
 
-// FirstInternalEndpoint returns the first available internal endpoint from the slice.
-func FirstInternalEndpoint(endpoints []networkingv1beta1.InternalGatewayEndpoint) *networkingv1beta1.InternalGatewayEndpoint {
+// FirstInternalEndpoint returns the first available internal endpoint.
+// It prefers the slice field and falls back to the deprecated single InternalEndpoint.
+func FirstInternalEndpoint(endpoints []networkingv1beta1.InternalGatewayEndpoint,
+	legacy *networkingv1beta1.InternalGatewayEndpoint) *networkingv1beta1.InternalGatewayEndpoint {
 	if len(endpoints) > 0 {
 		return &endpoints[0]
 	}
-	return nil
+	return legacy
 }

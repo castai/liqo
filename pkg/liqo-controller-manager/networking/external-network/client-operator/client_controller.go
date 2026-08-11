@@ -246,8 +246,14 @@ func (r *ClientReconciler) EnsureGatewayClient(ctx context.Context, gwClient *ne
 		objChild.Object["spec"] = spec
 
 		// Patch the endpoints directly from the GatewayClient spec, as template rendering cannot
-		// preserve complex array structures.
-		if err := patchEndpointsIntoSpec(spec, gwClient.Spec.Endpoints); err != nil {
+		// preserve complex array structures. Prefer the slice; fall back to the deprecated single
+		// Endpoint field for resources created with the old API.
+		endpoints := gwClient.Spec.Endpoints
+		if len(endpoints) == 0 && (len(gwClient.Spec.Endpoint.Addresses) > 0 ||
+			gwClient.Spec.Endpoint.Port != 0 || len(gwClient.Spec.Endpoint.Ports) > 0) {
+			endpoints = []networkingv1beta1.EndpointStatus{gwClient.Spec.Endpoint}
+		}
+		if err := patchEndpointsIntoSpec(spec, endpoints); err != nil {
 			return err
 		}
 		return nil

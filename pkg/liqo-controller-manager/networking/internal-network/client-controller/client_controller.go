@@ -106,7 +106,7 @@ func (r *ClientReconciler) ensureInternalFabric(ctx context.Context, gwClient *n
 	if configuration.Status.Remote == nil {
 		return fmt.Errorf("remote configuration not found for the gateway client %q", gwClient.Name)
 	}
-	internalEndpoint := internalnetwork.FirstInternalEndpoint(gwClient.Status.InternalEndpoints)
+	internalEndpoint := internalnetwork.FirstInternalEndpoint(gwClient.Status.InternalEndpoints, gwClient.Status.InternalEndpoint)
 	if internalEndpoint == nil || internalEndpoint.IP == nil {
 		return fmt.Errorf("internal endpoint not found for the gateway client %q", gwClient.Name)
 	}

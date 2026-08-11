@@ -373,5 +373,11 @@ func (o *Options) newGatewayClientForgeOptions(kubeClient kubernetes.Interface, 
 
 // collectEndpoints returns all available endpoints from the gateway server status.
 func collectEndpoints(gwServer *networkingv1beta1.GatewayServer) []networkingv1beta1.EndpointStatus {
-	return gwServer.Status.Endpoints
+	if len(gwServer.Status.Endpoints) > 0 {
+		return gwServer.Status.Endpoints
+	}
+	if gwServer.Status.Endpoint != nil {
+		return []networkingv1beta1.EndpointStatus{*gwServer.Status.Endpoint}
+	}
+	return nil
 }
