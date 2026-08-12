@@ -82,13 +82,21 @@ func run(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("creating manager: %w", err)
 	}
 
-	// Ensure the shared LPM-trie route map is pinned before any program loads it.
+	// Ensure the shared LPM-trie route maps are pinned before any program
+	// loads them.
 	routeMap, err := poc.LoadOrCreateRouteMap(options.RouteMapPath)
 	if err != nil {
 		return fmt.Errorf("loading route map: %w", err)
 	}
 	defer routeMap.Close()
 	klog.InfoS("eBPF route map ready", "path", options.RouteMapPath)
+
+	localRoutesMap, err := poc.LoadOrCreateLocalRoutesMap(options.LocalRoutesMapPath)
+	if err != nil {
+		return fmt.Errorf("loading local routes map: %w", err)
+	}
+	defer localRoutesMap.Close()
+	klog.InfoS("eBPF local routes map ready", "path", options.LocalRoutesMapPath)
 
 	// Discover the gateway IP from the environment. In a real implementation
 	// this would be sourced from the Gateway CRD/Service; for the PoC we use
@@ -100,11 +108,12 @@ func run(cmd *cobra.Command, _ []string) error {
 	}
 
 	if err := (&nodeagent.RouteReconciler{
-		Client:    mgr.GetClient(),
-		Scheme:    mgr.GetScheme(),
-		RouteMap:  routeMap,
-		TunnelID:  options.TunnelID,
-		GatewayIP: gatewayIP,
+		Client:         mgr.GetClient(),
+		Scheme:         mgr.GetScheme(),
+		RouteMap:       routeMap,
+		LocalRoutesMap: localRoutesMap,
+		TunnelID:       options.TunnelID,
+		GatewayIP:      gatewayIP,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("setting up route reconciler: %w", err)
 	}

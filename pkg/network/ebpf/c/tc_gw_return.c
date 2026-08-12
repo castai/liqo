@@ -26,7 +26,7 @@ struct {
 	__uint(value_size, sizeof(struct route_value));
 	__uint(pinning, LIBBPF_PIN_BY_NAME);
 	__uint(map_flags, BPF_F_NO_PREALLOC);
-} liqo_routes_poc __section(".maps");
+} liqo_local_routes_poc __section(".maps");
 
 SEC("classifier")
 int tc_gw_return(struct __sk_buff *skb)
@@ -56,14 +56,13 @@ int tc_gw_return(struct __sk_buff *skb)
 		return TC_ACT_OK;
 
 	/*
-	 * Check whether the destination belongs to the overlay.  The map is
-	 * shared with the pod-side program, but on the gateway the matching
-	 * entries are local Pod CIDRs populated by the gateway loader.
+	 * Check whether the destination belongs to the local overlay.  The local
+	 * routes map contains local Pod CIDRs populated by the gateway loader.
 	 */
 	key.prefixlen = 32;
 	key.addr = ip->daddr;
 
-	rv = bpf_map_lookup_elem(&liqo_routes_poc, &key);
+	rv = bpf_map_lookup_elem(&liqo_local_routes_poc, &key);
 	if (!rv)
 		return TC_ACT_OK;
 

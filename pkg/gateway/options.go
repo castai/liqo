@@ -50,6 +50,11 @@ type Options struct {
 	EnableNftMonitor   bool
 	EnableRouteMonitor bool
 
+	// EnableEBPFOverlayMode enables the PoC eBPF overlay return path.
+	// When true, the gateway creates a gw-liqo-tun Geneve interface in
+	// external-metadata mode and attaches tc_gw_return.o to liqo-tunnel egress.
+	EnableEBPFOverlayMode bool
+
 	DisableKernelVersionCheck bool
 	MinimumKernelVersion      kernelversion.KernelVersion
 	EnableMultipathHashPolicy bool

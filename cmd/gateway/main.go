@@ -41,6 +41,7 @@ import (
 	"github.com/liqotech/liqo/pkg/gateway"
 	"github.com/liqotech/liqo/pkg/gateway/concurrent"
 	"github.com/liqotech/liqo/pkg/gateway/connection"
+	"github.com/liqotech/liqo/pkg/gateway/returnpath"
 	"github.com/liqotech/liqo/pkg/gateway/tunnel"
 	"github.com/liqotech/liqo/pkg/liqo-controller-manager/networking/external-network/remapping"
 	"github.com/liqotech/liqo/pkg/route"
@@ -209,67 +210,74 @@ func run(cmd *cobra.Command, _ []string) error {
 		)
 	}
 
-	routeTargetRef := networkingv1beta1.RouteBindingTargetReference{
-		APIVersion: route.TargetAPIVersionV1,
-		Kind:       route.TargetKindPod,
-		Name:       connoptions.GwOptions.PodName,
-		Namespace:  connoptions.GwOptions.Namespace,
-	}
+	// In eBPF overlay mode the datapath bypasses host-level nftables rules and
+	// policy routing, so skip the controllers that reconcile firewall and route
+	// configurations. The WireGuard connection controller remains active.
+	if !connoptions.GwOptions.EnableEBPFOverlayMode {
+		routeTargetRef := networkingv1beta1.RouteBindingTargetReference{
+			APIVersion: route.TargetAPIVersionV1,
+			Kind:       route.TargetKindPod,
+			Name:       connoptions.GwOptions.PodName,
+			Namespace:  connoptions.GwOptions.Namespace,
+		}
 
-	rcr := route.NewRouteConfigurationBindingReconciler(
-		mgr.GetClient(),
-		mgr.GetScheme(),
-		mgr.GetEventRecorder("route-binding-controller"),
-	)
+		rcr := route.NewRouteConfigurationBindingReconciler(
+			mgr.GetClient(),
+			mgr.GetScheme(),
+			mgr.GetEventRecorder("route-binding-controller"),
+		)
 
-	if err := rcr.SetupWithManager(cmd.Context(), mgr, routeTargetRef,
-		connoptions.GwOptions.EnableRouteMonitor, connoptions.GwOptions.ReconcileTimeout); err != nil {
-		return fmt.Errorf("unable to setup route configuration binding reconciler: %w", err)
-	}
+		if err := rcr.SetupWithManager(cmd.Context(), mgr, routeTargetRef,
+			connoptions.GwOptions.EnableRouteMonitor, connoptions.GwOptions.ReconcileTimeout); err != nil {
+			return fmt.Errorf("unable to setup route configuration binding reconciler: %w", err)
+		}
 
-	// Setup the firewall configuration binding controller.
-	fwcr, err := firewall.NewFirewallConfigurationBindingReconciler(
-		mgr.GetClient(),
-		mgr.GetScheme(),
-		mgr.GetEventRecorder("firewall-binding-controller"),
-	)
-	if err != nil {
-		return fmt.Errorf("unable to create firewall configuration binding reconciler: %w", err)
-	}
+		// Setup the firewall configuration binding controller.
+		fwcr, err := firewall.NewFirewallConfigurationBindingReconciler(
+			mgr.GetClient(),
+			mgr.GetScheme(),
+			mgr.GetEventRecorder("firewall-binding-controller"),
+		)
+		if err != nil {
+			return fmt.Errorf("unable to create firewall configuration binding reconciler: %w", err)
+		}
 
-	fwTargetRef := networkingv1beta1.TargetReference{
-		APIVersion: firewall.TargetAPIVersionV1,
-		Kind:       firewall.TargetKindPod,
-		Name:       connoptions.GwOptions.PodName,
-		Namespace:  connoptions.GwOptions.Namespace,
-	}
+		fwTargetRef := networkingv1beta1.TargetReference{
+			APIVersion: firewall.TargetAPIVersionV1,
+			Kind:       firewall.TargetKindPod,
+			Name:       connoptions.GwOptions.PodName,
+			Namespace:  connoptions.GwOptions.Namespace,
+		}
 
-	if err := fwcr.SetupWithManager(cmd.Context(), mgr, fwTargetRef,
-		connoptions.GwOptions.EnableNftMonitor, connoptions.GwOptions.ReconcileTimeout); err != nil {
-		return fmt.Errorf("unable to setup firewall configuration binding reconciler: %w", err)
-	}
+		if err := fwcr.SetupWithManager(cmd.Context(), mgr, fwTargetRef,
+			connoptions.GwOptions.EnableNftMonitor, connoptions.GwOptions.ReconcileTimeout); err != nil {
+			return fmt.Errorf("unable to setup firewall configuration binding reconciler: %w", err)
+		}
 
-	// Setup the gateway firewall configuration binding creator controller.
-	gatewayBindingCreator := gateway.NewGatewayBindingCreatorReconciler(mgr.GetClient(), mgr.GetScheme(),
-		connoptions.GwOptions.PodName, connoptions.GwOptions.Namespace)
-	if err := gatewayBindingCreator.SetupWithManager(mgr, []labels.Set{
-		gateway.ForgeFirewallAllGatewaysTargetLabels(),
-		gateway.ForgeFirewallInternalTargetLabels(),
-		remapping.ForgeFirewallTargetLabels(connoptions.GwOptions.RemoteClusterID),
-		remapping.ForgeFirewallTargetLabelsIPMappingGw(),
-	}); err != nil {
-		return fmt.Errorf("unable to setup gateway firewall configuration binding creator: %w", err)
-	}
+		// Setup the gateway firewall configuration binding creator controller.
+		gatewayBindingCreator := gateway.NewGatewayBindingCreatorReconciler(mgr.GetClient(), mgr.GetScheme(),
+			connoptions.GwOptions.PodName, connoptions.GwOptions.Namespace)
+		if err := gatewayBindingCreator.SetupWithManager(mgr, []labels.Set{
+			gateway.ForgeFirewallAllGatewaysTargetLabels(),
+			gateway.ForgeFirewallInternalTargetLabels(),
+			remapping.ForgeFirewallTargetLabels(connoptions.GwOptions.RemoteClusterID),
+			remapping.ForgeFirewallTargetLabelsIPMappingGw(),
+		}); err != nil {
+			return fmt.Errorf("unable to setup gateway firewall configuration binding creator: %w", err)
+		}
 
-	// Setup the gateway route configuration binding creator controller.
-	gatewayRouteBindingCreator := gateway.NewGatewayRouteBindingCreatorReconciler(mgr.GetClient(), mgr.GetScheme(),
-		connoptions.GwOptions.PodName, connoptions.GwOptions.Namespace)
-	if err := gatewayRouteBindingCreator.SetupWithManager(mgr, []labels.Set{
-		gateway.ForgeRouteExternalTargetLabels(connoptions.GwOptions.RemoteClusterID),
-		gateway.ForgeRouteInternalTargetLabels(),
-		gateway.ForgeRouteInternalTargetLabelsByNode(connoptions.GwOptions.NodeName),
-	}); err != nil {
-		return fmt.Errorf("unable to setup gateway route configuration binding creator: %w", err)
+		// Setup the gateway route configuration binding creator controller.
+		gatewayRouteBindingCreator := gateway.NewGatewayRouteBindingCreatorReconciler(mgr.GetClient(), mgr.GetScheme(),
+			connoptions.GwOptions.PodName, connoptions.GwOptions.Namespace)
+		if err := gatewayRouteBindingCreator.SetupWithManager(mgr, []labels.Set{
+			gateway.ForgeRouteExternalTargetLabels(connoptions.GwOptions.RemoteClusterID),
+			gateway.ForgeRouteInternalTargetLabels(),
+			gateway.ForgeRouteInternalTargetLabelsByNode(connoptions.GwOptions.NodeName),
+		}); err != nil {
+			return fmt.Errorf("unable to setup gateway route configuration binding creator: %w", err)
+		}
+	} else {
+		klog.Info("eBPF overlay mode enabled: skipping host-level firewall and route controllers")
 	}
 
 	if connoptions.GwOptions.LeaderElection {
@@ -287,6 +295,22 @@ func run(cmd *cobra.Command, _ []string) error {
 		if err := mgr.Add(runnable); err != nil {
 			return fmt.Errorf("unable to add concurrent runnable: %w", err)
 		}
+	}
+
+	// Set up the PoC eBPF overlay return path when requested.
+	if connoptions.GwOptions.EnableEBPFOverlayMode {
+		ebpfCleanup, err := returnpath.Setup(returnpath.Options{})
+		if err != nil {
+			return fmt.Errorf("unable to setup eBPF overlay return path: %w", err)
+		}
+		defer func() {
+			if ebpfCleanup != nil {
+				if err := ebpfCleanup(); err != nil {
+					klog.Error(err)
+				}
+			}
+		}()
+		klog.Info("eBPF overlay return path enabled")
 	}
 
 	// Start the manager.

@@ -14,8 +14,10 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_endian.h>
 
-/* Pinned LPM-trie map path exposed to user-space. */
+/* Pinned LPM-trie map path exposed to user-space (forward path, used by pods). */
 #define LIQO_ROUTES_MAP_PATH "/sys/fs/bpf/liqo_routes_poc"
+/* Pinned LPM-trie map path for the gateway return path (local pod CIDRs). */
+#define LIQO_LOCAL_ROUTES_MAP_PATH "/sys/fs/bpf/liqo_local_routes_poc"
 
 /* Default Geneve port used by the PoC. */
 #define LIQO_GENEVE_PORT 6091

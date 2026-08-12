@@ -19,13 +19,15 @@ import (
 )
 
 // RouteReconciler watches Configuration CRDs and reconciles their remapped
-// remote Pod CIDRs into the shared eBPF LPM-trie route map.
+// remote CIDRs into the forward-path route map and local CIDRs into the
+// gateway return-path local-routes map.
 type RouteReconciler struct {
 	client.Client
-	Scheme    *runtime.Scheme
-	RouteMap  *ebpf.Map
-	TunnelID  uint32
-	GatewayIP net.IP
+	Scheme         *runtime.Scheme
+	RouteMap       *ebpf.Map
+	LocalRoutesMap *ebpf.Map
+	TunnelID       uint32
+	GatewayIP      net.IP
 }
 
 // +kubebuilder:rbac:groups=networking.liqo.io,resources=configurations,verbs=get;list;watch
@@ -63,35 +65,53 @@ func (r *RouteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 }
 
 func (r *RouteReconciler) syncRoutes(ctx context.Context, conf *networkingv1beta1.Configuration) error {
-	if conf.Status.Remote == nil {
-		return nil
-	}
+	// Forward path: remote remapped CIDRs are reached via the local gateway pod.
+	if conf.Status.Remote != nil {
+		cidrs := make([]networkingv1beta1.CIDR, 0, len(conf.Status.Remote.CIDR.Pod)+len(conf.Status.Remote.CIDR.External))
+		cidrs = append(cidrs, conf.Status.Remote.CIDR.Pod...)
+		cidrs = append(cidrs, conf.Status.Remote.CIDR.External...)
 
-	cidrs := make([]networkingv1beta1.CIDR, 0, len(conf.Status.Remote.CIDR.Pod)+len(conf.Status.Remote.CIDR.External))
-	cidrs = append(cidrs, conf.Status.Remote.CIDR.Pod...)
-	cidrs = append(cidrs, conf.Status.Remote.CIDR.External...)
-
-	for _, cidr := range cidrs {
-		_, ipNet, err := net.ParseCIDR(string(cidr))
-		if err != nil {
-			return fmt.Errorf("parsing remote pod cidr %q: %w", cidr, err)
-		}
-
-		ones, _ := ipNet.Mask.Size()
-		key := poc.LPMKey{
-			PrefixLen: uint32(ones),
-			Addr:      ipv4ToU32(ipNet.IP),
-		}
-		val := poc.RouteValue{
-			GatewayIP: ipv4ToU32(r.GatewayIP),
-			TunnelID:  r.TunnelID,
-		}
-
-		if err := r.RouteMap.Update(key, val, ebpf.UpdateAny); err != nil {
-			return fmt.Errorf("updating route for %s: %w", cidr, err)
+		for _, cidr := range cidrs {
+			if err := r.updateRoute(r.RouteMap, cidr, r.GatewayIP, r.TunnelID); err != nil {
+				return fmt.Errorf("updating remote route for %s: %w", cidr, err)
+			}
 		}
 	}
 
+	// Return path: local pod CIDRs are local destinations that the gateway must
+	// re-encapsulate into Geneve and deliver to the receiving pod.  gateway_ip
+	// is unused by the return-path eBPF program, but we store the gateway IP
+	// for consistency.
+	if r.LocalRoutesMap != nil && conf.Spec.Local != nil {
+		for _, cidr := range conf.Spec.Local.CIDR.Pod {
+			if err := r.updateRoute(r.LocalRoutesMap, cidr, r.GatewayIP, r.TunnelID); err != nil {
+				return fmt.Errorf("updating local route for %s: %w", cidr, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+func (r *RouteReconciler) updateRoute(m *ebpf.Map, cidr networkingv1beta1.CIDR, gatewayIP net.IP, tunnelID uint32) error {
+	_, ipNet, err := net.ParseCIDR(string(cidr))
+	if err != nil {
+		return fmt.Errorf("parsing cidr %q: %w", cidr, err)
+	}
+
+	ones, _ := ipNet.Mask.Size()
+	key := poc.LPMKey{
+		PrefixLen: uint32(ones),
+		Addr:      ipv4ToU32(ipNet.IP),
+	}
+	val := poc.RouteValue{
+		GatewayIP: ipv4ToU32(gatewayIP),
+		TunnelID:  tunnelID,
+	}
+
+	if err := m.Update(key, val, ebpf.UpdateAny); err != nil {
+		return fmt.Errorf("updating route for %s: %w", cidr, err)
+	}
 	return nil
 }
 

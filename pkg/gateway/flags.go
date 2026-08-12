@@ -76,6 +76,9 @@ const (
 	// FlagNameEnableRouteMonitor is the flag to enable the route monitor.
 	FlagNameEnableRouteMonitor FlagName = "enable-route-monitor"
 
+	// FlagNameEnableEBPFOverlayMode enables the PoC eBPF overlay return path.
+	FlagNameEnableEBPFOverlayMode FlagName = "enable-ebpf-overlay-mode"
+
 	// FlagNameDisableKernelVersionCheck is the flag to enable the kernel version check.
 	FlagNameDisableKernelVersionCheck FlagName = "disable-kernel-version-check"
 	// FlagNameMinimumKernelVersion is the minimum kernel version required by Liqo.
@@ -135,6 +138,8 @@ func InitFlags(flagset *pflag.FlagSet, opts *Options) {
 
 	flagset.BoolVar(&opts.EnableNftMonitor, FlagNameEnableNftMonitor.String(), true, "Enable nftables monitor")
 	flagset.BoolVar(&opts.EnableRouteMonitor, FlagNameEnableRouteMonitor.String(), true, "Enable route monitor")
+	flagset.BoolVar(&opts.EnableEBPFOverlayMode, FlagNameEnableEBPFOverlayMode.String(), false,
+		"Enable the PoC eBPF overlay return path (creates gw-liqo-tun and attaches tc_gw_return.o)")
 
 	flagset.BoolVar(&opts.DisableKernelVersionCheck, FlagNameDisableKernelVersionCheck.String(), false, "Disable the kernel version check")
 	flagset.Var(&opts.MinimumKernelVersion, FlagNameMinimumKernelVersion.String(), "Minimum kernel version required by Liqo")
