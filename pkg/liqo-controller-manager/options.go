@@ -52,6 +52,7 @@ type Options struct {
 	FabricFullMasqueradeEnabled    bool
 	GwmasqbypassEnabled            bool
 	GatewayTemplateWatchEnabled    bool
+	EBPFOverlayEnabled             bool
 	NetworkWorkers                 int
 	IPWorkers                      int
 	GenevePort                     uint16

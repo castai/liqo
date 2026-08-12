@@ -1,0 +1,81 @@
+{{- $nodeAgentConfig := (merge (dict "name" "node-agent" "module" "networking" "version" .Values.networking.nodeAgent.image.version) .) -}}
+
+{{- if and .Values.networking.enabled .Values.networking.ebpfOverlay.enabled }}
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "liqo.prefixedName" $nodeAgentConfig }}
+  labels:
+    {{- include "liqo.labels" $nodeAgentConfig | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+    "argocd.argoproj.io/sync-wave": "-1"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "liqo.prefixedName" $nodeAgentConfig }}
+  labels:
+    {{- include "liqo.labels" $nodeAgentConfig | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+    "argocd.argoproj.io/sync-wave": "-1"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "liqo.prefixedName" $nodeAgentConfig }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "liqo.prefixedName" $nodeAgentConfig }}
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "liqo.prefixedName" $nodeAgentConfig }}
+  labels:
+    {{- include "liqo.labels" $nodeAgentConfig | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+    "argocd.argoproj.io/sync-wave": "-1"
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
+  - update
+  - patch
+- apiGroups:
+  - networking.liqo.io
+  resources:
+  - configurations
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - networking.liqo.io
+  resources:
+  - gatewayclients
+  - gatewayservers
+  verbs:
+  - get
+  - list
+  - watch
+{{- if .Values.openshiftConfig.enabled }}
+- apiGroups:
+  - security.openshift.io
+  resourceNames:
+  - {{ include "liqo.prefixedName" $nodeAgentConfig }}
+  resources:
+  - securitycontextconstraints
+  verbs:
+  - use
+{{- end }}
+
+{{- end }}

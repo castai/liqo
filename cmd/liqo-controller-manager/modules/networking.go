@@ -69,6 +69,7 @@ type NetworkingOption struct {
 	FabricFullMasquerade           bool
 	GwmasqbypassEnabled            bool
 	GatewayTemplateWatchEnabled    bool
+	EBPFOverlayEnabled             bool
 
 	GenevePort                     uint16
 	RouteConfigurationRulePriority int
@@ -93,6 +94,7 @@ func NewNetworkingOption(factory *dynamicutils.RunnableFactory, dynClient dynami
 		FabricFullMasquerade:           opts.FabricFullMasqueradeEnabled,
 		GwmasqbypassEnabled:            opts.GwmasqbypassEnabled,
 		GatewayTemplateWatchEnabled:    opts.GatewayTemplateWatchEnabled,
+		EBPFOverlayEnabled:             opts.EBPFOverlayEnabled,
 
 		GenevePort:                     opts.GenevePort,
 		RouteConfigurationRulePriority: opts.RouteConfigurationRulePriority,
@@ -133,20 +135,27 @@ func SetupNetworkingModule(ctx context.Context, mgr manager.Manager, uncachedCli
 		return err
 	}
 
-	extCfgReconciler := externalnetworkroute.NewConfigurationReconciler(mgr.GetClient(), mgr.GetScheme(),
-		mgr.GetEventRecorderFor("external-configuration-controller"))
-	if err := extCfgReconciler.SetupWithManager(mgr); err != nil {
-		klog.Errorf("unable to create controller externalConfigurationReconciler: %s", err)
-		return err
-	}
+	// The legacy fabric/gateway dataplane controllers create RouteConfiguration,
+	// FirewallConfiguration, GeneveTunnel, InternalNode, InternalFabric,
+	// InternalServer and InternalClient resources. They are not needed when the
+	// eBPF overlay PoC datapath is enabled, because the node agent and gateway
+	// eBPF programs handle routing, encapsulation and firewall semantics directly.
+	if !opts.EBPFOverlayEnabled {
+		extCfgReconciler := externalnetworkroute.NewConfigurationReconciler(mgr.GetClient(), mgr.GetScheme(),
+			mgr.GetEventRecorderFor("external-configuration-controller"))
+		if err := extCfgReconciler.SetupWithManager(mgr); err != nil {
+			klog.Errorf("unable to create controller externalConfigurationReconciler: %s", err)
+			return err
+		}
 
-	intPodReconciler := route.NewPodReconciler(mgr.GetClient(), mgr.GetScheme(),
-		mgr.GetEventRecorderFor("internal-pod-controller"), &route.Options{
-			Namespace: opts.LiqoNamespace,
-		})
-	if err := intPodReconciler.SetupWithManager(mgr); err != nil {
-		klog.Errorf("unable to create controller internalPodReconciler: %s", err)
-		return err
+		intPodReconciler := route.NewPodReconciler(mgr.GetClient(), mgr.GetScheme(),
+			mgr.GetEventRecorderFor("internal-pod-controller"), &route.Options{
+				Namespace: opts.LiqoNamespace,
+			})
+		if err := intPodReconciler.SetupWithManager(mgr); err != nil {
+			klog.Errorf("unable to create controller internalPodReconciler: %s", err)
+			return err
+		}
 	}
 
 	wgServerRec := wggatewaycontrollers.NewWgGatewayServerReconciler(mgr.GetClient(), mgr.GetScheme(),
@@ -193,71 +202,73 @@ func SetupNetworkingModule(ctx context.Context, mgr manager.Manager, uncachedCli
 		return err
 	}
 
-	internalServerReconciler := internalservercontroller.NewServerReconciler(mgr.GetClient(), mgr.GetScheme())
-	if err := internalServerReconciler.SetupWithManager(mgr); err != nil {
-		klog.Errorf("Unable to start the internalServerReconciler: %v", err)
-		return err
-	}
+	if !opts.EBPFOverlayEnabled {
+		internalServerReconciler := internalservercontroller.NewServerReconciler(mgr.GetClient(), mgr.GetScheme())
+		if err := internalServerReconciler.SetupWithManager(mgr); err != nil {
+			klog.Errorf("Unable to start the internalServerReconciler: %v", err)
+			return err
+		}
 
-	internalClientReconciler := internalclientcontroller.NewClientReconciler(mgr.GetClient(), mgr.GetScheme())
-	if err := internalClientReconciler.SetupWithManager(mgr); err != nil {
-		klog.Errorf("Unable to start the internalClientReconciler: %v", err)
-		return err
-	}
+		internalClientReconciler := internalclientcontroller.NewClientReconciler(mgr.GetClient(), mgr.GetScheme())
+		if err := internalClientReconciler.SetupWithManager(mgr); err != nil {
+			klog.Errorf("Unable to start the internalClientReconciler: %v", err)
+			return err
+		}
 
-	internalFabricReconciler := internalfabriccontroller.NewInternalFabricReconciler(mgr.GetClient(), mgr.GetScheme(),
-		opts.RouteConfigurationRulePriority)
-	if err := internalFabricReconciler.SetupWithManager(mgr); err != nil {
-		klog.Errorf("Unable to start the internalFabricReconciler: %v", err)
-		return err
-	}
+		internalFabricReconciler := internalfabriccontroller.NewInternalFabricReconciler(mgr.GetClient(), mgr.GetScheme(),
+			opts.RouteConfigurationRulePriority)
+		if err := internalFabricReconciler.SetupWithManager(mgr); err != nil {
+			klog.Errorf("Unable to start the internalFabricReconciler: %v", err)
+			return err
+		}
 
-	configurationReconciler := internalconfigurationcontroller.NewConfigurationReconciler(mgr.GetClient(), mgr.GetScheme(),
-		&internalconfigurationcontroller.Options{
-			FullMasqueradeEnabled: opts.FabricFullMasquerade,
-		})
-	if err := configurationReconciler.SetupWithManager(mgr); err != nil {
-		klog.Errorf("Unable to start the configurationReconciler: %v", err)
-		return err
-	}
+		configurationReconciler := internalconfigurationcontroller.NewConfigurationReconciler(mgr.GetClient(), mgr.GetScheme(),
+			&internalconfigurationcontroller.Options{
+				FullMasqueradeEnabled: opts.FabricFullMasquerade,
+			})
+		if err := configurationReconciler.SetupWithManager(mgr); err != nil {
+			klog.Errorf("Unable to start the configurationReconciler: %v", err)
+			return err
+		}
 
-	// Before starting the Node reconciler, make sure that there are no "orphan" InternalNode resources.
-	if err := nodecontroller.SyncInternalNodes(ctx, uncachedClient); err != nil {
-		klog.Errorf("Unable to perform InternalNode synchronization: %v", err)
-		return err
-	}
+		// Before starting the Node reconciler, make sure that there are no "orphan" InternalNode resources.
+		if err := nodecontroller.SyncInternalNodes(ctx, uncachedClient); err != nil {
+			klog.Errorf("Unable to perform InternalNode synchronization: %v", err)
+			return err
+		}
 
-	nodeReconciler := nodecontroller.NewNodeReconciler(mgr.GetClient(), mgr.GetScheme(), opts.LiqoNamespace)
-	if err := nodeReconciler.SetupWithManager(mgr); err != nil {
-		klog.Errorf("Unable to start the nodeReconciler: %v", err)
-		return err
-	}
+		nodeReconciler := nodecontroller.NewNodeReconciler(mgr.GetClient(), mgr.GetScheme(), opts.LiqoNamespace)
+		if err := nodeReconciler.SetupWithManager(mgr); err != nil {
+			klog.Errorf("Unable to start the nodeReconciler: %v", err)
+			return err
+		}
 
-	internalNodeReconciler := route.NewInternalNodeReconciler(
-		mgr.GetClient(),
-		mgr.GetScheme(),
-		mgr.GetEventRecorderFor("internal-node-controller"),
-		&route.Options{
-			Namespace: opts.LiqoNamespace,
-		},
-	)
-	if err := internalNodeReconciler.SetupWithManager(mgr); err != nil {
-		klog.Errorf("Unable to start the internalNodeReconciler: %v", err)
-		return err
-	}
+		internalNodeReconciler := route.NewInternalNodeReconciler(
+			mgr.GetClient(),
+			mgr.GetScheme(),
+			mgr.GetEventRecorderFor("internal-node-controller"),
+			&route.Options{
+				Namespace: opts.LiqoNamespace,
+			},
+		)
+		if err := internalNodeReconciler.SetupWithManager(mgr); err != nil {
+			klog.Errorf("Unable to start the internalNodeReconciler: %v", err)
+			return err
+		}
 
-	firewallBindingGCReconciler := firewallbindinggc.NewBindingGCReconciler(mgr.GetClient(),
-		firewallbindinggc.DefaultBindingGCPeriod)
-	if err := firewallBindingGCReconciler.SetupWithManager(mgr); err != nil {
-		klog.Errorf("Unable to start the firewallBindingGCReconciler: %v", err)
-		return err
-	}
+		firewallBindingGCReconciler := firewallbindinggc.NewBindingGCReconciler(mgr.GetClient(),
+			firewallbindinggc.DefaultBindingGCPeriod)
+		if err := firewallBindingGCReconciler.SetupWithManager(mgr); err != nil {
+			klog.Errorf("Unable to start the firewallBindingGCReconciler: %v", err)
+			return err
+		}
 
-	routeBindingGCReconciler := routebindinggc.NewBindingGCReconciler(mgr.GetClient(),
-		routebindinggc.DefaultBindingGCPeriod)
-	if err := routeBindingGCReconciler.SetupWithManager(mgr); err != nil {
-		klog.Errorf("Unable to start the routeBindingGCReconciler: %v", err)
-		return err
+		routeBindingGCReconciler := routebindinggc.NewBindingGCReconciler(mgr.GetClient(),
+			routebindinggc.DefaultBindingGCPeriod)
+		if err := routeBindingGCReconciler.SetupWithManager(mgr); err != nil {
+			klog.Errorf("Unable to start the routeBindingGCReconciler: %v", err)
+			return err
+		}
 	}
 
 	ipMappingReconciler := remapping.NewIPReconciler(mgr.GetClient(), mgr.GetScheme())
@@ -266,21 +277,23 @@ func SetupNetworkingModule(ctx context.Context, mgr manager.Manager, uncachedCli
 		return err
 	}
 
-	remappingReconciler, err := remapping.NewRemappingReconciler(
-		mgr.GetClient(),
-		mgr.GetScheme(),
-		mgr.GetEventRecorderFor("remapping-controller"),
-	)
-	if err != nil {
-		klog.Errorf("Unable to initialize the remappingReconciler: %v", err)
-		return err
-	}
-	if err := remappingReconciler.SetupWithManager(mgr); err != nil {
-		klog.Errorf("Unable to start the remappingReconciler: %v", err)
-		return err
+	if !opts.EBPFOverlayEnabled {
+		remappingReconciler, err := remapping.NewRemappingReconciler(
+			mgr.GetClient(),
+			mgr.GetScheme(),
+			mgr.GetEventRecorderFor("remapping-controller"),
+		)
+		if err != nil {
+			klog.Errorf("Unable to initialize the remappingReconciler: %v", err)
+			return err
+		}
+		if err := remappingReconciler.SetupWithManager(mgr); err != nil {
+			klog.Errorf("Unable to start the remappingReconciler: %v", err)
+			return err
+		}
 	}
 
-	if opts.GwmasqbypassEnabled {
+	if opts.GwmasqbypassEnabled && !opts.EBPFOverlayEnabled {
 		gwmasqbypassReconciler := gwmasqbypass.NewPodReconciler(
 			mgr.GetClient(),
 			mgr.GetScheme(),

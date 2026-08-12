@@ -1,0 +1,133 @@
+{{- $nodeAgentConfig := (merge (dict "name" "node-agent" "module" "networking" "version" .Values.networking.nodeAgent.image.version) .) -}}
+
+{{- if and .Values.networking.enabled .Values.networking.ebpfOverlay.enabled }}
+
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  labels:
+    {{- include "liqo.labels" $nodeAgentConfig | nindent 4 }}
+  name: {{ include "liqo.prefixedName" $nodeAgentConfig }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "liqo.selectorLabels" $nodeAgentConfig | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        "argocd.argoproj.io/sync-wave": "0"
+        {{- if .Values.networking.nodeAgent.pod.annotations }}
+        {{- toYaml .Values.networking.nodeAgent.pod.annotations | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "liqo.selectorLabels" $nodeAgentConfig | nindent 8 }}
+        networking.liqo.io/component: node-agent
+        {{- if .Values.networking.nodeAgent.pod.labels }}
+          {{- toYaml .Values.networking.nodeAgent.pod.labels | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- if .Values.networking.nodeAgent.nodeSelector }}
+      nodeSelector:
+      {{- toYaml .Values.networking.nodeAgent.nodeSelector | nindent 8 }}
+      {{- end }}
+      {{- if .Values.networking.nodeAgent.affinity }}
+      affinity:
+      {{- toYaml .Values.networking.nodeAgent.affinity | nindent 8 }}
+      {{- end }}
+      tolerations:
+        - key: CriticalAddonsOnly
+          operator: Exists
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/master
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/infra
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/control-plane
+        {{- if .Values.networking.nodeAgent.tolerations }}
+        {{- toYaml .Values.networking.nodeAgent.tolerations | nindent 8 }}
+        {{- end }}
+      serviceAccountName: {{ include "liqo.prefixedName" $nodeAgentConfig }}
+      {{- include "liqo.imagePullSecrets" . | nindent 6 -}}
+      containers:
+        - image: {{ .Values.networking.nodeAgent.image.name }}{{ include "liqo.suffix" $nodeAgentConfig }}:{{ include "liqo.version" $nodeAgentConfig }}
+          imagePullPolicy: {{ .Values.pullPolicy }}
+          name: {{ $nodeAgentConfig.name }}
+          command: ["/usr/bin/liqo-node-agent"]
+          args:
+          - --node-name=$(NODE_NAME)
+          - --pod-name=$(POD_NAME)
+          - --route-map-path={{ .Values.networking.ebpfOverlay.routeMapPath }}
+          - --local-routes-map-path={{ .Values.networking.ebpfOverlay.localRoutesMapPath }}
+          - --pod-encap-object={{ .Values.networking.ebpfOverlay.objects.podEncap }}
+          - --pod-tunnel-name={{ .Values.networking.ebpfOverlay.podTunnelName }}
+          - --geneve-port={{ .Values.networking.genevePort }}
+          - --tunnel-id={{ .Values.networking.ebpfOverlay.tunnelID }}
+          - --health-probe-bind-address=:{{ .Values.networking.nodeAgent.config.healthProbeBindAddressPort}}
+          - --metrics-address=:{{ .Values.networking.nodeAgent.config.metricsAddressPort}}
+          {{- if not .Values.requirements.kernel.enabled }}
+          - --disable-kernel-version-check
+          {{- end }}
+          {{- if .Values.common.globalAnnotations }}
+          {{- $d := dict "commandName" "--global-annotations" "dictionary" .Values.common.globalAnnotations -}}
+          {{- include "liqo.concatenateMap" $d | nindent 10 }}
+          {{- end }}
+          {{- if .Values.common.globalLabels }}
+          {{- $d := dict "commandName" "--global-labels" "dictionary" .Values.common.globalLabels -}}
+          {{- include "liqo.concatenateMap" $d | nindent 10 }}
+          {{- end }}
+          {{- if .Values.networking.nodeAgent.pod.extraArgs }}
+          {{- toYaml .Values.networking.nodeAgent.pod.extraArgs | nindent 10 }}
+          {{- end }}
+          resources: {{- toYaml .Values.networking.nodeAgent.pod.resources | nindent 12 }}
+          securityContext:
+            privileged: true
+            capabilities:
+              add:
+              - NET_ADMIN
+              - NET_RAW
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          volumeMounts:
+            - name: bpf
+              mountPath: /sys/fs/bpf
+            - name: proc
+              mountPath: /proc
+            - name: ebpf-objects
+              mountPath: /opt/liqo/ebpf
+          {{- if or (and .Values.networking.nodeAgent.config.healthProbeBindAddressPort (ne .Values.networking.nodeAgent.config.healthProbeBindAddressPort "0")) .Values.metrics.enabled }}
+          ports:
+          {{- if .Values.metrics.enabled }}
+          - containerPort: {{ .Values.networking.nodeAgent.config.metricsAddressPort }}
+            name: node-agent-metrics
+            protocol: TCP
+          {{- end }}
+          {{- if and .Values.networking.nodeAgent.config.healthProbeBindAddressPort (ne .Values.networking.nodeAgent.config.healthProbeBindAddressPort "0") }}
+          - containerPort: {{ .Values.networking.nodeAgent.config.healthProbeBindAddressPort }}
+            name: healthz
+            protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: healthz
+          {{- end }}
+          {{- end }}
+      hostNetwork: true
+      volumes:
+        - name: bpf
+          hostPath:
+            path: /sys/fs/bpf
+            type: Directory
+        - name: proc
+          hostPath:
+            path: /proc
+            type: Directory
+        - name: ebpf-objects
+          emptyDir: {}
+{{- end }}
