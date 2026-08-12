@@ -199,6 +199,7 @@ jobs:
           - gateway/wireguard
           - gateway/geneve
           - fabric
+          - liqo-node-agent
     steps:
       - name: Check out code
         uses: actions/checkout@v4
