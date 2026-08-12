@@ -149,3 +149,33 @@ jobs:
       uses: raven-actions/actionlint@v2
       with:
         version: 1.7.7
+
+  ebpf:
+    name: Build PoC eBPF programs
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v4
+      with:
+        ref: "${{ github.event.pull_request.head.sha }}"
+        repository: ${{github.event.pull_request.head.repo.full_name}}
+        persist-credentials: false
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang libbpf-dev linux-headers-generic
+    - name: Build eBPF objects
+      run: make ebpf
+    - name: Verify artifacts exist and are BPF objects
+      run: |
+        test -f pkg/network/ebpf/c/tc_pod_encap.o
+        test -f pkg/network/ebpf/c/tc_gw_return.o
+        file pkg/network/ebpf/c/tc_pod_encap.o | grep -q "eBPF"
+        file pkg/network/ebpf/c/tc_gw_return.o | grep -q "eBPF"
+    - name: Verify eBPF objects load into the kernel
+      run: |
+        sudo bpftool prog loadall pkg/network/ebpf/c/tc_pod_encap.o /sys/fs/bpf/liqo_ci_tc_pod_encap
+        sudo bpftool prog loadall pkg/network/ebpf/c/tc_gw_return.o /sys/fs/bpf/liqo_ci_tc_gw_return
+        sudo bpftool prog show pinned /sys/fs/bpf/liqo_ci_tc_pod_encap/tc_pod_encap
+        sudo bpftool prog show pinned /sys/fs/bpf/liqo_ci_tc_gw_return/tc_gw_return
+        sudo rm -rf /sys/fs/bpf/liqo_ci_tc_pod_encap /sys/fs/bpf/liqo_ci_tc_gw_return

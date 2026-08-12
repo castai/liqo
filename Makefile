@@ -40,6 +40,27 @@ ctl:
 	$(eval GIT_COMMIT=$(shell git rev-parse HEAD 2>/dev/null || echo "unknown"))
 	go build -o ${BINDIR} -buildvcs=false -ldflags="-s -w -X 'github.com/liqotech/liqo/pkg/liqoctl/version.LiqoctlVersion=$(GIT_COMMIT)'" ./cmd/liqoctl
 
+# Build the PoC eBPF TC programs.
+# On macOS (or any host without Linux kernel headers), run `make ebpf-docker`
+# to compile inside a container with clang and headers installed.
+ebpf:
+	$(MAKE) -C pkg/network/ebpf/c all
+
+EBPF_BUILDER_IMAGE ?= liqo-ebpf-builder
+
+# Build the PoC eBPF programs inside a container (useful on macOS or hosts
+# without clang/kernel headers installed).
+ebpf-docker:
+	docker build -t $(EBPF_BUILDER_IMAGE) -f build/ebpf/Dockerfile .
+	docker run --rm \
+		-v $(PWD):/src \
+		-w /src/pkg/network/ebpf/c \
+		$(EBPF_BUILDER_IMAGE) \
+		CLANG=clang all
+
+ebpf-clean:
+	$(MAKE) -C pkg/network/ebpf/c clean
+
 ctl-install:
 	$(eval GIT_COMMIT=$(shell git rev-parse HEAD 2>/dev/null || echo "unknown"))
 	go install -ldflags="-X 'github.com/liqotech/liqo/pkg/liqoctl/version.LiqoctlVersion=$(git rev-parse HEAD)'" ./cmd/liqoctl
