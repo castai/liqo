@@ -5,6 +5,7 @@ on:
       - "v*"
     branches:
       - master
+      - ebpf-gw
   issue_comment:
     types:
       - created
