@@ -8,7 +8,6 @@ package main
 
 import (
 	"fmt"
-	"net"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -98,22 +97,12 @@ func run(cmd *cobra.Command, _ []string) error {
 	defer localRoutesMap.Close()
 	klog.InfoS("eBPF local routes map ready", "path", options.LocalRoutesMapPath)
 
-	// Discover the gateway IP from the environment. In a real implementation
-	// this would be sourced from the Gateway CRD/Service; for the PoC we use
-	// a flag or env var. Default to a placeholder if unset.
-	gatewayIP := net.ParseIP(os.Getenv("LIQO_EBPF_GATEWAY_IP"))
-	if gatewayIP == nil {
-		gatewayIP = net.ParseIP("10.0.0.1")
-		klog.InfoS("LIQO_EBPF_GATEWAY_IP not set, using placeholder", "ip", gatewayIP)
-	}
-
 	if err := (&nodeagent.RouteReconciler{
 		Client:         mgr.GetClient(),
 		Scheme:         mgr.GetScheme(),
 		RouteMap:       routeMap,
 		LocalRoutesMap: localRoutesMap,
 		TunnelID:       options.TunnelID,
-		GatewayIP:      gatewayIP,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("setting up route reconciler: %w", err)
 	}
