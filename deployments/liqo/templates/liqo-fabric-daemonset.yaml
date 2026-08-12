@@ -1,7 +1,7 @@
 ---
 {{- $fabricConfig := (merge (dict "name" "fabric" "module" "networking" "version" .Values.networking.fabric.image.version ) .) -}}
 
-{{- if .Values.networking.enabled }}
+{{- if and .Values.networking.enabled (not .Values.networking.ebpfOverlay.enabled) }}
 
 apiVersion: apps/v1
 kind: DaemonSet

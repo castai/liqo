@@ -65,6 +65,24 @@ networking:
   apiServerAccessThroughEndpointSlices: false
   # -- The port used by the geneve tunnels.
   genevePort: 6091
+  # -- eBPF overlay PoC configuration.
+  # When enabled, the legacy fabric DaemonSet is skipped and the node-agent
+  # DaemonSet injects the eBPF datapath into pod network namespaces.
+  ebpfOverlay:
+    # -- Enable/Disable the eBPF overlay PoC.
+    enabled: true
+    # -- Pinned path for the shared LPM-trie route map (forward path).
+    routeMapPath: /sys/fs/bpf/liqo_routes_poc
+    # -- Pinned path for the gateway return-path LPM-trie map.
+    localRoutesMapPath: /sys/fs/bpf/liqo_local_routes_poc
+    # -- Name of the Geneve interface created inside pods.
+    podTunnelName: liqo-tun
+    # -- Geneve VNI used by the PoC overlay.
+    tunnelID: 1
+    # -- Paths to the eBPF object files (expected to exist inside the node-agent image).
+    objects:
+      podEncap: /opt/liqo/ebpf/tc_pod_encap.o
+      gwReturn: /opt/liqo/ebpf/tc_gw_return.o
   # -- Enable/Disable the creation of the NOTRACK firewallconfiguration for the geneve tunnel traffic.
   # When enabled, UDP traffic on the geneve port is exempted from connection tracking,
   # which reduces overhead and prevents the conntrack table from being flooded by tunnel traffic.
@@ -94,6 +112,44 @@ networking:
       # -- Set the value for the mssclamp rule.
       # Set to 0 to use automatic value discovery based on the MTU of the tunnel interface.
       value: 0
+  # -- Set the options for the node-agent DaemonSet.
+  # It is deployed only when networking.ebpfOverlay.enabled is true.
+  nodeAgent:
+    config:
+      # -- Port used by the node-agent health probe endpoint.
+      healthProbeBindAddressPort: "8082"
+      # -- Port used by the node-agent metrics endpoint.
+      metricsAddressPort: "8083"
+    pod:
+      # -- Annotations for the node-agent pod.
+      annotations: {}
+      # -- Labels for the node-agent pod.
+      labels: {}
+      # -- Extra arguments for the node-agent pod.
+      extraArgs: []
+      # -- Resource requests and limits (https://kubernetes.io/docs/user-guide/compute-resources/) for the node-agent container.
+      resources:
+        limits: {}
+        requests: {}
+      # -- PriorityClassName (https://kubernetes.io/docs/concepts/scheduling-eviction/pod-priority-preemption/#pod-priority) for the node-agent pod.
+      priorityClassName: ""
+      # -- Additional tolerations for node-agent pods.
+      tolerations: []
+      # -- NodeSelector for the node-agent pods.
+      nodeSelector: {}
+      # -- Affinity for the node-agent pods.
+      affinity: {}
+    image:
+      # -- Image repository for the node-agent container.
+      name: "us-docker.pkg.dev/castai-hub/library/liqo/node-agent"
+      # -- Custom version for the node-agent image. If not specified, the global tag is used.
+      version: ""
+    # -- NodeSelector for the node-agent DaemonSet.
+    nodeSelector: {}
+    # -- Affinity for the node-agent DaemonSet.
+    affinity: {}
+    # -- Additional tolerations for the node-agent DaemonSet.
+    tolerations: []
   # -- Set the options for the default gateway (server/client) templates.
   # The default templates use a WireGuard implementation to connect the gateway of the clusters.
   # These options are used to configure only the default templates and should not be considered

@@ -92,7 +92,13 @@ spec:
                 - --gateway-uid={{"{{ .GatewayUID }}"}}
                 - --mode=server
                 - --container-name=gateway
+                {{- if .Values.networking.ebpfOverlay.enabled }}
+                - --concurrent-containers-names=wireguard
+                - --enable-ebpf-overlay-mode=true
+                {{- else }}
                 - --concurrent-containers-names=wireguard,geneve
+                - --enable-ebpf-overlay-mode=false
+                {{- end }}
                 {{- if .Values.common.globalAnnotations }}
                 {{- $d := dict "commandName" "--global-annotations" "dictionary" .Values.common.globalAnnotations -}}
                 {{- include "liqo.concatenateMap" $d | nindent 16 }}
@@ -208,6 +214,7 @@ spec:
                   mountPath: /ipc
                 - name: wireguard-config
                   mountPath: /etc/wireguard/keys
+              {{- if not .Values.networking.ebpfOverlay.enabled }}
               - name: geneve
                 image: {{ .Values.networking.gatewayTemplates.container.geneve.image.name }}{{ include "liqo.suffix" $geneveConfig }}:{{ include "liqo.version" $geneveConfig }}
                 imagePullPolicy: {{ .Values.pullPolicy }}
@@ -266,6 +273,7 @@ spec:
                     add:
                     - NET_ADMIN
                     - NET_RAW
+              {{- end }}
               {{- if .Values.networking.gatewayTemplates.pod.priorityClassName }}
               priorityClassName: {{ .Values.networking.gatewayTemplates.pod.priorityClassName }}
               {{- end }}
