@@ -47,7 +47,7 @@ func FindFreeInterfaceName(ctx context.Context, cl client.Client, i interface{})
 		}
 		return findFreeInterfaceNameForInternalNode(ctx, cl)
 	case *networkingv1beta1.InternalFabric:
-		if obj.Spec.Interface.Node.Name != "" {
+		if obj.Spec.Interface != nil && obj.Spec.Interface.Node.Name != "" {
 			return obj.Spec.Interface.Node.Name, nil
 		}
 		return findFreeInterfaceNameForInternalFabric(ctx, cl)
@@ -69,7 +69,7 @@ func findFreeInterfaceNameForInternalFabric(ctx context.Context, cl client.Clien
 		name = forgeInterfaceName()
 		ok = true
 		for i := range list.Items {
-			if list.Items[i].Spec.Interface.Node.Name == name {
+			if isNodeInterfaceNameUsed(&list.Items[i], name) {
 				ok = false
 				break
 			}
@@ -80,6 +80,52 @@ func findFreeInterfaceNameForInternalFabric(ctx context.Context, cl client.Clien
 		return "", fmt.Errorf("cannot find a free interface name")
 	}
 	return name, nil
+}
+
+// FindFreeReplicaInterfaceName returns a free interface name for the given internal fabric replica.
+// If the replica already has an interface name, it returns it. Otherwise, it generates a new one
+// that does not collide with any existing node interface name.
+func FindFreeReplicaInterfaceName(ctx context.Context, cl client.Client,
+	internalFabric *networkingv1beta1.InternalFabric, replicaID int32) (string, error) {
+	if replica := GetInternalFabricReplica(internalFabric, replicaID); replica != nil && replica.Interface.Node.Name != "" {
+		return replica.Interface.Node.Name, nil
+	}
+
+	list, err := getters.ListInternalFabricsByLabels(ctx, cl, labels.Everything())
+	if err != nil {
+		return "", fmt.Errorf("cannot list internal fabrics: %w", err)
+	}
+
+	ok := false
+	retry := 0
+	var name string
+	for !ok && retry < maxretries {
+		name = forgeInterfaceName()
+		ok = true
+		for i := range list.Items {
+			if isNodeInterfaceNameUsed(&list.Items[i], name) {
+				ok = false
+				break
+			}
+		}
+		retry++
+	}
+	if !ok {
+		return "", fmt.Errorf("cannot find a free interface name")
+	}
+	return name, nil
+}
+
+func isNodeInterfaceNameUsed(internalFabric *networkingv1beta1.InternalFabric, name string) bool {
+	if internalFabric.Spec.Interface != nil && internalFabric.Spec.Interface.Node.Name == name {
+		return true
+	}
+	for i := range internalFabric.Spec.Replicas {
+		if internalFabric.Spec.Replicas[i].Interface.Node.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func findFreeInterfaceNameForInternalNode(ctx context.Context, cl client.Client) (string, error) {

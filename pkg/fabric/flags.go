@@ -61,6 +61,14 @@ const (
 
 	// FlagNameGenevePingPort is the UDP port for the geneve ping receiver.
 	FlagNameGenevePingPort FlagName = "geneve-ping-port"
+	// FlagNameEnableMultipathHashPolicy enables 5-tuple hashing to improve ECMP load balancing.
+	// When set to true, the fabric writes 1 to /proc/sys/net/ipv4/fib_multipath_hash_policy.
+	// This allows the kernel to distribute traffic across ECMP routes based on the
+	// 5-tuple (src/dst IP, src/dst port, protocol) instead of the default L3-only hashing.
+	// Without this setting, traffic between the same IP pair always uses the same tunnel
+	// regardless of the port. Note: this setting is namespaced and only affects the
+	// fabric pod's network namespace.
+	FlagNameEnableMultipathHashPolicy FlagName = "enable-multipath-hash-policy"
 )
 
 // RequiredFlags contains the list of the mandatory flags.
@@ -90,6 +98,8 @@ func InitFlags(flagset *pflag.FlagSet, opts *Options) {
 		consts.DefaultGeneveCleanupInterval, "Geneve cleanup interval")
 	flagset.IntVar(&opts.ConnCheckOptions.PingPort, FlagNameGenevePingPort.String(), 12346,
 		"UDP port to listen on for geneve tunnel ping health checks (must match gateway geneve-ping-port)")
+	flagset.BoolVar(&opts.EnableMultipathHashPolicy, FlagNameEnableMultipathHashPolicy.String(), false,
+		"Set fib_multipath_hash_policy=1 to use 5-tuple hashing for multipath routing")
 }
 
 // MarkFlagsRequired marks the flags as required.

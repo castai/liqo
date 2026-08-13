@@ -55,6 +55,18 @@ type InternalFabricSpecInterface struct {
 	Gateway InternalFabricSpecInterfaceGateway `json:"gateway"`
 }
 
+// InternalFabricReplica contains the information about a gateway replica.
+type InternalFabricReplica struct {
+	// ReplicaID is the stable identifier of the gateway replica.
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=63
+	ReplicaID int32 `json:"replicaID"`
+	// GatewayIP is the IP of the gateway pod.
+	GatewayIP IP `json:"gatewayIP"`
+	// Interface contains the information about network interfaces.
+	Interface InternalFabricSpecInterface `json:"interface"`
+}
+
 // InternalFabricSpec defines the desired state of InternalFabric.
 type InternalFabricSpec struct {
 	// MTU is the MTU of the internal fabric.
@@ -62,9 +74,16 @@ type InternalFabricSpec struct {
 	// RemoteCIDRs is the list of remote CIDRs to be routed through the gateway.
 	RemoteCIDRs []CIDR `json:"remoteCIDRs,omitempty"`
 	// Interface contains the information about network interfaces.
-	Interface InternalFabricSpecInterface `json:"interface"`
+	// Deprecated: use Replicas instead.
+	// +optional
+	Interface *InternalFabricSpecInterface `json:"interface,omitempty"`
 	// GatewayIP is the IP of the gateway pod.
-	GatewayIP IP `json:"gatewayIP"`
+	// Deprecated: use Replicas instead.
+	// +optional
+	GatewayIP IP `json:"gatewayIP,omitempty"`
+	// Replicas contains the information about the gateway replicas.
+	// +kubebuilder:validation:MaxItems=64
+	Replicas []InternalFabricReplica `json:"replicas,omitempty"`
 }
 
 // +kubebuilder:object:root=true

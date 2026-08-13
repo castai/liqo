@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tcp-echo
+  labels:
+    app: tcp-echo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tcp-echo
+  template:
+    metadata:
+      labels:
+        app: tcp-echo
+    spec:
+      containers:
+        - name: tcp-echo
+          image: alpine/socat
+          # socat listens on TCP port 9000 and executes 'cat' to echo everything back
+          command: ["socat"]
+          args: ["TCP4-LISTEN:9000,fork,reuseaddr", "EXEC:cat"]
+          ports:
+            - containerPort: 9000
+              protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tcp-echo-service
+spec:
+  selector:
+    app: tcp-echo
+  ports:
+    - protocol: TCP
+      port: 9000
+      targetPort: 9000

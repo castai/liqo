@@ -55,11 +55,15 @@ spec:
             description: InternalFabricSpec defines the desired state of InternalFabric.
             properties:
               gatewayIP:
-                description: GatewayIP is the IP of the gateway pod.
+                description: |-
+                  GatewayIP is the IP of the gateway pod.
+                  Deprecated: use Replicas instead.
                 format: ipv4
                 type: string
               interface:
-                description: Interface contains the information about network interfaces.
+                description: |-
+                  Interface contains the information about network interfaces.
+                  Deprecated: use Replicas instead.
                 properties:
                   gateway:
                     description: Gateway contains the information about the gateway
@@ -99,9 +103,62 @@ spec:
                   format: cidr
                   type: string
                 type: array
-            required:
-            - gatewayIP
-            - interface
+              replicas:
+                description: Replicas contains the information about the gateway replicas.
+                items:
+                  description: InternalFabricReplica contains the information about
+                    a gateway replica.
+                  properties:
+                    gatewayIP:
+                      description: GatewayIP is the IP of the gateway pod.
+                      format: ipv4
+                      type: string
+                    interface:
+                      description: Interface contains the information about network
+                        interfaces.
+                      properties:
+                        gateway:
+                          description: Gateway contains the information about the
+                            gateway interface.
+                          properties:
+                            ip:
+                              description: IP is the IP of the interface added to
+                                the gateway.
+                              format: ipv4
+                              type: string
+                          required:
+                          - ip
+                          type: object
+                        node:
+                          description: |-
+                            Node contains the information about the node interface.
+                            The node interface is created on every node to connect them to the gateway related with the internalfabric.
+                          properties:
+                            name:
+                              description: Name is the name of the interface added
+                                to the nodes.
+                              type: string
+                          required:
+                          - name
+                          type: object
+                      required:
+                      - gateway
+                      - node
+                      type: object
+                    replicaID:
+                      description: ReplicaID is the stable identifier of the gateway
+                        replica.
+                      format: int32
+                      maximum: 63
+                      minimum: 0
+                      type: integer
+                  required:
+                  - gatewayIP
+                  - interface
+                  - replicaID
+                  type: object
+                maxItems: 64
+                type: array
             type: object
         type: object
     served: true

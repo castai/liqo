@@ -10133,6 +10133,15 @@ spec:
                     description: Node is the name of the node where the endpoint is
                       running.
                     type: string
+                  replicaID:
+                    description: ReplicaID is the stable identifier of the gateway
+                      replica.
+                    format: int32
+                    maximum: 63
+                    minimum: 0
+                    type: integer
+                required:
+                - replicaID
                 type: object
               internalEndpoints:
                 description: InternalEndpoints specifies the endpoints for the internal
@@ -10149,6 +10158,15 @@ spec:
                       description: Node is the name of the node where the endpoint
                         is running.
                       type: string
+                    replicaID:
+                      description: ReplicaID is the stable identifier of the gateway
+                        replica.
+                      format: int32
+                      maximum: 63
+                      minimum: 0
+                      type: integer
+                  required:
+                  - replicaID
                   type: object
                 maxItems: 64
                 type: array
