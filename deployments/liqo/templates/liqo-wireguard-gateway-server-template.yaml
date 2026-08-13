@@ -209,11 +209,18 @@ spec:
                   {{ if .Values.networking.gatewayTemplates.wireguard.implementation | eq "userspace" }}
                   privileged: true
                   {{ end }}
+                  {{- if .Values.networking.ebpfOverlay.enabled }}
+                  privileged: true
+                  {{- end }}
                 volumeMounts:
                 - name: ipc
                   mountPath: /ipc
                 - name: wireguard-config
                   mountPath: /etc/wireguard/keys
+                {{- if .Values.networking.ebpfOverlay.enabled }}
+                - name: bpf
+                  mountPath: /sys/fs/bpf
+                {{- end }}
               {{- if not .Values.networking.ebpfOverlay.enabled }}
               - name: geneve
                 image: {{ .Values.networking.gatewayTemplates.container.geneve.image.name }}{{ include "liqo.suffix" $geneveConfig }}:{{ include "liqo.version" $geneveConfig }}
@@ -283,4 +290,10 @@ spec:
                   secretName: "{{"{{ .SecretName }}"}}"
               - name: ipc
                 emptyDir: {}
+              {{- if .Values.networking.ebpfOverlay.enabled }}
+              - name: bpf
+                hostPath:
+                  path: /sys/fs/bpf
+                  type: Directory
+              {{- end }}
 {{- end }}

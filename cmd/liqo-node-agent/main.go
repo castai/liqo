@@ -107,6 +107,16 @@ func run(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("setting up route reconciler: %w", err)
 	}
 
+	criResolver, err := nodeagent.NewCRIResolver(options.CRISocketPath)
+	if err != nil {
+		return fmt.Errorf("creating CRI resolver: %w", err)
+	}
+	defer func() {
+		if err := criResolver.Close(); err != nil {
+			klog.ErrorS(err, "closing CRI resolver")
+		}
+	}()
+
 	if err := (&nodeagent.PodReconciler{
 		Client:         mgr.GetClient(),
 		Scheme:         mgr.GetScheme(),
@@ -116,6 +126,7 @@ func run(cmd *cobra.Command, _ []string) error {
 		PodTunnelName:  options.PodTunnelName,
 		GenevePort:     options.GenevePort,
 		Injector:       nodeagent.NewInjector(),
+		PIDResolver:    criResolver,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("setting up pod reconciler: %w", err)
 	}

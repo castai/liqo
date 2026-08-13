@@ -24,6 +24,12 @@ type PodReconciler struct {
 	PodTunnelName  string
 	GenevePort     uint16
 	Injector       Injector
+	PIDResolver    PodPIDResolver
+}
+
+// PodPIDResolver resolves the sandbox (pause) container PID for a pod.
+type PodPIDResolver interface {
+	PodPID(ctx context.Context, pod *corev1.Pod) (int, error)
 }
 
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
@@ -34,6 +40,13 @@ func (r *PodReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.Pod{}).
 		Complete(r)
+}
+
+func (r *PodReconciler) resolvePodPID(ctx context.Context, pod *corev1.Pod) (int, error) {
+	if r.PIDResolver != nil {
+		return r.PIDResolver.PodPID(ctx, pod)
+	}
+	return 0, nil
 }
 
 func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -48,6 +61,9 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	if pod.Spec.NodeName != r.NodeName {
 		return ctrl.Result{}, nil
 	}
+	if pod.Spec.HostNetwork {
+		return ctrl.Result{}, nil
+	}
 	if pod.Status.Phase != corev1.PodRunning {
 		return ctrl.Result{}, nil
 	}
@@ -60,11 +76,12 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		return ctrl.Result{}, nil
 	}
 
-	pid := podPID(&pod)
+	pid, err := r.resolvePodPID(ctx, &pod)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("resolving pid for pod %s/%s: %w", pod.Namespace, pod.Name, err)
+	}
 	if pid == 0 {
-		// Kubernetes does not expose sandbox PIDs in the Pod API; a production
-		// implementation resolves the pause container PID via the container
-		// runtime (CRI).  For the PoC we requeue until a PID is available.
+		// The pause container may not be running yet; requeue.
 		return ctrl.Result{Requeue: true}, nil
 	}
 
@@ -92,18 +109,4 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	return ctrl.Result{}, nil
 }
 
-// podPID resolves the sandbox (pause) container PID for the pod.
-// Kubernetes does not expose this directly, so the PoC uses a placeholder that
-// must be replaced with a CRI lookup in a production implementation.
-func podPID(pod *corev1.Pod) int {
-	if pod.Status.ContainerStatuses == nil {
-		return 0
-	}
-	for _, cs := range pod.Status.ContainerStatuses {
-		if cs.ContainerID != "" && cs.State.Running != nil {
-			_ = cs
-			return 0
-		}
-	}
-	return 0
-}
+

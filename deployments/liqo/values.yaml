@@ -141,7 +141,7 @@ networking:
       affinity: {}
     image:
       # -- Image repository for the node-agent container.
-      name: "us-docker.pkg.dev/castai-hub/library/liqo/node-agent"
+      name: "us-docker.pkg.dev/castai-hub/library/liqo/liqo-node-agent"
       # -- Custom version for the node-agent image. If not specified, the global tag is used.
       version: ""
     # -- NodeSelector for the node-agent DaemonSet.

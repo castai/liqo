@@ -27,6 +27,9 @@ type Options struct {
 	GenevePort uint16
 	// TunnelID is the default Geneve VNI used by the PoC.
 	TunnelID uint32
+	// CRISocketPath is the path to the Container Runtime Interface (CRI) Unix
+	// socket used to resolve pause-container PIDs.
+	CRISocketPath string
 }
 
 // NewOptions returns a default Options value.
@@ -39,6 +42,7 @@ func NewOptions() *Options {
 		PodTunnelName:  "liqo-tun",
 		GenevePort:     6091,
 		TunnelID:       1,
+		CRISocketPath:  "/run/containerd/containerd.sock",
 	}
 }
 
@@ -52,4 +56,5 @@ func InitFlags(flags *pflag.FlagSet, o *Options) {
 	flags.StringVar(&o.PodTunnelName, "pod-tunnel-name", o.PodTunnelName, "Name of the Geneve interface created inside pods")
 	flags.Uint16Var(&o.GenevePort, "geneve-port", o.GenevePort, "UDP port used for the Geneve overlay")
 	flags.Uint32Var(&o.TunnelID, "tunnel-id", o.TunnelID, "Default Geneve VNI")
+	flags.StringVar(&o.CRISocketPath, "cri-socket", o.CRISocketPath, "Path to the CRI runtime Unix socket")
 }

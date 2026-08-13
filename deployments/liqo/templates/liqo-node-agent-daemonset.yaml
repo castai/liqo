@@ -47,6 +47,7 @@ spec:
         {{- toYaml .Values.networking.nodeAgent.tolerations | nindent 8 }}
         {{- end }}
       serviceAccountName: {{ include "liqo.prefixedName" $nodeAgentConfig }}
+      hostPID: true
       {{- include "liqo.imagePullSecrets" . | nindent 6 -}}
       containers:
         - image: {{ .Values.networking.nodeAgent.image.name }}{{ include "liqo.suffix" $nodeAgentConfig }}:{{ include "liqo.version" $nodeAgentConfig }}
@@ -55,26 +56,13 @@ spec:
           command: ["/usr/bin/liqo-node-agent"]
           args:
           - --node-name=$(NODE_NAME)
-          - --pod-name=$(POD_NAME)
           - --route-map-path={{ .Values.networking.ebpfOverlay.routeMapPath }}
           - --local-routes-map-path={{ .Values.networking.ebpfOverlay.localRoutesMapPath }}
           - --pod-encap-object={{ .Values.networking.ebpfOverlay.objects.podEncap }}
           - --pod-tunnel-name={{ .Values.networking.ebpfOverlay.podTunnelName }}
           - --geneve-port={{ .Values.networking.genevePort }}
           - --tunnel-id={{ .Values.networking.ebpfOverlay.tunnelID }}
-          - --health-probe-bind-address=:{{ .Values.networking.nodeAgent.config.healthProbeBindAddressPort}}
-          - --metrics-address=:{{ .Values.networking.nodeAgent.config.metricsAddressPort}}
-          {{- if not .Values.requirements.kernel.enabled }}
-          - --disable-kernel-version-check
-          {{- end }}
-          {{- if .Values.common.globalAnnotations }}
-          {{- $d := dict "commandName" "--global-annotations" "dictionary" .Values.common.globalAnnotations -}}
-          {{- include "liqo.concatenateMap" $d | nindent 10 }}
-          {{- end }}
-          {{- if .Values.common.globalLabels }}
-          {{- $d := dict "commandName" "--global-labels" "dictionary" .Values.common.globalLabels -}}
-          {{- include "liqo.concatenateMap" $d | nindent 10 }}
-          {{- end }}
+          - --cri-socket=/run/containerd/containerd.sock
           {{- if .Values.networking.nodeAgent.pod.extraArgs }}
           {{- toYaml .Values.networking.nodeAgent.pod.extraArgs | nindent 10 }}
           {{- end }}
@@ -90,34 +78,13 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
-            - name: POD_NAME
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.name
           volumeMounts:
             - name: bpf
               mountPath: /sys/fs/bpf
             - name: proc
               mountPath: /proc
-            - name: ebpf-objects
-              mountPath: /opt/liqo/ebpf
-          {{- if or (and .Values.networking.nodeAgent.config.healthProbeBindAddressPort (ne .Values.networking.nodeAgent.config.healthProbeBindAddressPort "0")) .Values.metrics.enabled }}
-          ports:
-          {{- if .Values.metrics.enabled }}
-          - containerPort: {{ .Values.networking.nodeAgent.config.metricsAddressPort }}
-            name: node-agent-metrics
-            protocol: TCP
-          {{- end }}
-          {{- if and .Values.networking.nodeAgent.config.healthProbeBindAddressPort (ne .Values.networking.nodeAgent.config.healthProbeBindAddressPort "0") }}
-          - containerPort: {{ .Values.networking.nodeAgent.config.healthProbeBindAddressPort }}
-            name: healthz
-            protocol: TCP
-          readinessProbe:
-            httpGet:
-              path: /readyz
-              port: healthz
-          {{- end }}
-          {{- end }}
+            - name: cri-socket
+              mountPath: /run/containerd/containerd.sock
       hostNetwork: true
       volumes:
         - name: bpf
@@ -128,6 +95,8 @@ spec:
           hostPath:
             path: /proc
             type: Directory
-        - name: ebpf-objects
-          emptyDir: {}
+        - name: cri-socket
+          hostPath:
+            path: /run/containerd/containerd.sock
+            type: Socket
 {{- end }}
