@@ -291,7 +291,7 @@ func (r *WgGatewayClientReconciler) handleInternalEndpointStatus(ctx context.Con
 		return fmt.Errorf("retrieving gateway pods: %w", err)
 	}
 
-	wgClient.Status.InternalEndpoints = forgeInternalEndpoints(gwPods)
+	wgClient.Status.InternalEndpoints = forgeInternalEndpoints(gwPods, wgClient.Name)
 	return nil
 }
 

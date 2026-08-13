@@ -83,7 +83,13 @@ func geneveCleanup(ctx context.Context, cl client.Client) error {
 
 	internalfabricsMap := make(map[string]any)
 	for i := range internalfabricsList.Items {
-		internalfabricsMap[internalfabricsList.Items[i].Spec.Interface.Node.Name] = struct{}{}
+		internalfabric := &internalfabricsList.Items[i]
+		if internalfabric.Spec.Interface != nil {
+			internalfabricsMap[internalfabric.Spec.Interface.Node.Name] = struct{}{}
+		}
+		for j := range internalfabric.Spec.Replicas {
+			internalfabricsMap[internalfabric.Spec.Replicas[j].Interface.Node.Name] = struct{}{}
+		}
 	}
 
 	var errs []error

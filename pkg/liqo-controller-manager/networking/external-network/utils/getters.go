@@ -16,6 +16,8 @@ package utils
 
 import (
 	"fmt"
+	"math"
+	"strconv"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -91,6 +93,20 @@ func ParseInternalEndpoint(internalEndpoint map[string]interface{}) *networkingv
 	}
 	if value, ok := internalEndpoint["node"]; ok {
 		res.Node = ptr.To(value.(string))
+	}
+	if value, ok := internalEndpoint["replicaID"]; ok {
+		switch v := value.(type) {
+		case float64:
+			res.ReplicaID = int32(v)
+		case int64:
+			if v >= math.MinInt32 && v <= math.MaxInt32 {
+				res.ReplicaID = int32(v)
+			}
+		case string:
+			if id, err := strconv.ParseInt(v, 10, 32); err == nil {
+				res.ReplicaID = int32(id)
+			}
+		}
 	}
 	return res
 }

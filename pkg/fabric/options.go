@@ -37,9 +37,10 @@ type Options struct {
 	DisableKernelVersionCheck bool
 	MinimumKernelVersion      kernelversion.KernelVersion
 
-	DisableARP            bool
-	GeneveCleanupInterval time.Duration
-	GenevePort            uint16
+	DisableARP                bool
+	GeneveCleanupInterval     time.Duration
+	GenevePort                uint16
+	EnableMultipathHashPolicy bool
 
 	ConnCheckOptions *conncheck.Options
 }

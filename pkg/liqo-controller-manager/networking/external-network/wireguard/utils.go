@@ -48,7 +48,6 @@ import (
 
 const (
 	wireguardVolumeName = "wireguard-config"
-	replicaIDLabel      = "networking.liqo.io/replica-id"
 )
 
 func filterWireGuardSecretsPredicate() predicate.Predicate {
@@ -281,7 +280,7 @@ func injectReplicaID(deployment *appsv1.Deployment, replica int32) {
 	if deployment.Spec.Template.Labels == nil {
 		deployment.Spec.Template.Labels = map[string]string{}
 	}
-	deployment.Spec.Template.Labels[replicaIDLabel] = replicaStr
+	deployment.Spec.Template.Labels[consts.GatewayReplicaID] = replicaStr
 
 	if deployment.Spec.Selector == nil {
 		deployment.Spec.Selector = &metav1.LabelSelector{}
@@ -289,7 +288,7 @@ func injectReplicaID(deployment *appsv1.Deployment, replica int32) {
 	if deployment.Spec.Selector.MatchLabels == nil {
 		deployment.Spec.Selector.MatchLabels = map[string]string{}
 	}
-	deployment.Spec.Selector.MatchLabels[replicaIDLabel] = replicaStr
+	deployment.Spec.Selector.MatchLabels[consts.GatewayReplicaID] = replicaStr
 
 	deployment.Spec.Replicas = ptr.To(int32(1))
 
@@ -442,13 +441,41 @@ func deleteObsoleteLegacyService(ctx context.Context, cl client.Client, owner me
 }
 
 // forgeInternalEndpoints builds a list of internal endpoints from gateway pods.
-func forgeInternalEndpoints(pods []corev1.Pod) []networkingv1beta1.InternalGatewayEndpoint {
+func forgeInternalEndpoints(pods []corev1.Pod, gatewayName string) []networkingv1beta1.InternalGatewayEndpoint {
 	endpoints := make([]networkingv1beta1.InternalGatewayEndpoint, 0, len(pods))
+	baseName := forge.GatewayResourceName(gatewayName)
 	for i := range pods {
+		replicaID := replicaIDFromPod(&pods[i], baseName)
 		endpoints = append(endpoints, networkingv1beta1.InternalGatewayEndpoint{
-			IP:   ptr.To(networkingv1beta1.IP(pods[i].Status.PodIP)),
-			Node: &pods[i].Spec.NodeName,
+			IP:        ptr.To(networkingv1beta1.IP(pods[i].Status.PodIP)),
+			Node:      &pods[i].Spec.NodeName,
+			ReplicaID: replicaID,
 		})
 	}
 	return endpoints
+}
+
+// replicaIDFromPod returns the replica ID of a gateway pod, using the replica-id label
+// if present, or falling back to parsing the pod name based on the per-replica deployment name.
+func replicaIDFromPod(pod *corev1.Pod, baseName string) int32 {
+	if idStr, ok := pod.Labels[consts.GatewayReplicaID]; ok {
+		if id, err := strconv.ParseInt(idStr, 10, 32); err == nil {
+			klog.Infof("Pod %s replica label %q -> %d", pod.Name, idStr, id)
+			return int32(id)
+		}
+		klog.Warningf("Pod %s has invalid replica label %q", pod.Name, idStr)
+	}
+
+	prefix := baseName + "-"
+	if strings.HasPrefix(pod.Name, prefix) {
+		suffix := pod.Name[len(prefix):]
+		parts := strings.SplitN(suffix, "-", 2)
+		if id, err := strconv.ParseInt(parts[0], 10, 32); err == nil {
+			klog.Infof("Pod %s parsed replica ID from name -> %d", pod.Name, id)
+			return int32(id)
+		}
+	}
+
+	klog.Warningf("Unable to determine replica ID for pod %s (baseName %q), defaulting to 0", pod.Name, baseName)
+	return 0
 }

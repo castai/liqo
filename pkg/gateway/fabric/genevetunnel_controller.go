@@ -17,6 +17,7 @@ package fabric
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"sync"
 	"sync/atomic"
 
@@ -36,6 +37,7 @@ import (
 	networkingv1beta1 "github.com/liqotech/liqo/apis/networking/v1beta1"
 	"github.com/liqotech/liqo/pkg/conncheck"
 	"github.com/liqotech/liqo/pkg/consts"
+	internalnetwork "github.com/liqotech/liqo/pkg/liqo-controller-manager/networking/internal-network"
 	"github.com/liqotech/liqo/pkg/utils/getters"
 	"github.com/liqotech/liqo/pkg/utils/network/geneve"
 )
@@ -128,6 +130,19 @@ func (r *GeneveTunnelReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			gt.Spec.InternalFabricRef.Namespace, gt.Spec.InternalFabricRef.Name, err)
 	}
 
+	replicaID, err := replicaIDFromTunnel(gt)
+	if err != nil {
+		klog.Warningf("Unable to get replica ID for genevetunnel %s: %v", req, err)
+		return ctrl.Result{}, nil
+	}
+
+	replica := internalnetwork.GetInternalFabricReplica(&internalfabric, replicaID)
+	if replica == nil {
+		klog.Warningf("No replica %d found for internalfabric %s/%s", replicaID,
+			internalfabric.Namespace, internalfabric.Name)
+		return ctrl.Result{}, nil
+	}
+
 	var remoteIP *networkingv1beta1.IP
 	switch r.Options.GwOptions.NodeName {
 	case internalnode.Name:
@@ -143,7 +158,7 @@ func (r *GeneveTunnelReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	if err := geneve.EnsureGeneveInterfacePresence(
 		internalnode.Spec.Interface.Gateway.Name,
-		internalfabric.Spec.Interface.Gateway.IP.String(),
+		replica.Interface.Gateway.IP.String(),
 		remoteIP.String(),
 		gt.Spec.ID,
 		r.Options.DisableARP,
@@ -163,7 +178,7 @@ func (r *GeneveTunnelReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	if r.Options.ConnCheckOptions.PingEnabled {
 		bindIP := r.Options.ConnCheckOptions.PingBindIP
 		if bindIP == "" {
-			bindIP = internalfabric.Spec.Interface.Gateway.IP.String()
+			bindIP = replica.Interface.Gateway.IP.String()
 		}
 
 		// The receiver must outlive this specific Reconcile call, so it is bound to a
@@ -200,9 +215,14 @@ func (r *GeneveTunnelReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return obj.GetNamespace() == r.Options.GwOptions.Namespace
 	})
 
+	replicaStr := strconv.Itoa(int(r.Options.GwOptions.ReplicaID))
+	replicaPredicate := predicate.NewPredicateFuncs(func(obj client.Object) bool {
+		return obj.GetLabels()[consts.GatewayReplicaID] == replicaStr
+	})
+
 	return ctrl.NewControllerManagedBy(mgr).Named(consts.CtrlInternalNodeGeneve).
 		For(&networkingv1beta1.GeneveTunnel{},
-			builder.WithPredicates(namespacePredicate)).
+			builder.WithPredicates(predicate.And(namespacePredicate, replicaPredicate))).
 		Watches(&networkingv1beta1.InternalNode{},
 			handler.EnqueueRequestsFromMapFunc(r.internalNodeEnqueuer)).
 		Watches(&networkingv1beta1.InternalFabric{},
@@ -214,6 +234,7 @@ func (r *GeneveTunnelReconciler) SetupWithManager(mgr ctrl.Manager) error {
 func (r *GeneveTunnelReconciler) internalNodeEnqueuer(ctx context.Context, obj client.Object) []reconcile.Request {
 	list, err := getters.ListGeneveTunnelsByLabels(ctx, r.Client, r.Options.GwOptions.Namespace, labels.SelectorFromSet(labels.Set{
 		consts.InternalNodeName: obj.GetName(),
+		consts.GatewayReplicaID: strconv.Itoa(int(r.Options.GwOptions.ReplicaID)),
 	}))
 	if err != nil {
 		klog.Errorf("Failed to list genevetunnels for internalnode %s: %v", obj.GetName(), err)
@@ -226,6 +247,7 @@ func (r *GeneveTunnelReconciler) internalNodeEnqueuer(ctx context.Context, obj c
 func (r *GeneveTunnelReconciler) internalFabricEnqueuer(ctx context.Context, obj client.Object) []reconcile.Request {
 	list, err := getters.ListGeneveTunnelsByLabels(ctx, r.Client, obj.GetNamespace(), labels.SelectorFromSet(labels.Set{
 		consts.InternalFabricName: obj.GetName(),
+		consts.GatewayReplicaID:   strconv.Itoa(int(r.Options.GwOptions.ReplicaID)),
 	}))
 	if err != nil {
 		klog.Errorf("Failed to list genevetunnels for internalfabric %s/%s: %v", obj.GetNamespace(), obj.GetName(), err)
@@ -246,4 +268,16 @@ func geneveTunnelListToRequests(list *networkingv1beta1.GeneveTunnelList) []reco
 		}
 	}
 	return requests
+}
+
+func replicaIDFromTunnel(tunnel *networkingv1beta1.GeneveTunnel) (int32, error) {
+	idStr, ok := tunnel.Labels[consts.GatewayReplicaID]
+	if !ok {
+		return 0, fmt.Errorf("missing replica label")
+	}
+	id, err := strconv.ParseInt(idStr, 10, 32)
+	if err != nil {
+		return 0, fmt.Errorf("invalid replica label %q: %w", idStr, err)
+	}
+	return int32(id), nil
 }

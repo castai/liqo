@@ -231,6 +231,9 @@ networking:
       # -- Enable/Disable the route monitor for the fabric pod.
       # It means that the fabric pod will monitor the routing rules and will restore them in case of changes.
       routeMonitor: true
+      # -- Enable 5-tuple ECMP hashing (fib_multipath_hash_policy=1) in the fabric pod.
+      # This improves load balancing when multiple gateway replicas provide ECMP next-hops.
+      multipathHashPolicy: false
       # -- Set the port where the fabric pod will expose the health probe.
       # To disable the health probe, set the port to 0.
       healthProbeBindAddressPort: "8081"
