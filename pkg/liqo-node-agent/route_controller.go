@@ -5,6 +5,7 @@ package nodeagent
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"net"
 	"time"
@@ -226,5 +227,8 @@ func ipv4ToU32(ip net.IP) uint32 {
 	if ip == nil {
 		return 0
 	}
-	return uint32(ip[0])<<24 | uint32(ip[1])<<16 | uint32(ip[2])<<8 | uint32(ip[3])
+	// Preserve the raw IPv4 byte order as it appears in packet memory.
+	// The eBPF programs read/write __u32 IPv4 values directly from packet and
+	// map memory, so the user-space encoding must match the host native endian.
+	return binary.NativeEndian.Uint32(ip)
 }

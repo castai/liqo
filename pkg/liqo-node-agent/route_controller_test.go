@@ -5,6 +5,7 @@ package nodeagent
 
 import (
 	"context"
+	"encoding/binary"
 	"net"
 	"testing"
 
@@ -19,20 +20,16 @@ import (
 )
 
 func TestIPv4ToU32(t *testing.T) {
-	cases := []struct {
-		ip   string
-		want uint32
-	}{
-		{"0.0.0.0", 0},
-		{"10.0.0.1", 0x0a000001},
-		{"192.168.1.1", 0xc0a80101},
-		{"255.255.255.255", 0xffffffff},
-	}
+	cases := []string{"0.0.0.0", "10.0.0.1", "192.168.1.1", "255.255.255.255"}
 
 	for _, tc := range cases {
-		t.Run(tc.ip, func(t *testing.T) {
-			ip := net.ParseIP(tc.ip)
-			assert.Equal(t, tc.want, ipv4ToU32(ip))
+		t.Run(tc, func(t *testing.T) {
+			ip := net.ParseIP(tc).To4()
+			got := ipv4ToU32(ip)
+
+			var raw [4]byte
+			binary.NativeEndian.PutUint32(raw[:], got)
+			assert.Equal(t, []byte(ip), raw[:])
 		})
 	}
 }
