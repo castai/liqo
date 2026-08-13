@@ -14,6 +14,10 @@ COPY ./bin/${TARGETARCH}/${COMPONENT}_linux_${TARGETARCH} /usr/bin/${COMPONENT}
 RUN chmod +x /usr/bin/${COMPONENT}
 RUN ln -s /usr/bin/${COMPONENT} /usr/bin/liqo-component
 
+# Copy eBPF objects used by the eBPF overlay PoC components.
+# Build them first with `make ebpf-docker` so the source files exist.
+COPY ./pkg/network/ebpf/c/*.o /opt/liqo/ebpf/
+
 WORKDIR /workspace
 
 ENTRYPOINT ["/usr/bin/liqo-component"]
