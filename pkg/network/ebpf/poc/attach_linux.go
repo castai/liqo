@@ -75,7 +75,14 @@ func AttachTCProgram(prog *ebpf.Program, ifindex int) (io.Closer, error) {
 		DirectAction: true,
 	}
 	if err := netlink.FilterAdd(filter); err != nil {
-		return nil, fmt.Errorf("adding bpf filter on ifindex %d: %w", ifindex, err)
+		if !errors.Is(err, unix.EEXIST) {
+			return nil, fmt.Errorf("adding bpf filter on ifindex %d: %w", ifindex, err)
+		}
+		// A previous injection left a filter attached. Replace it so the
+		// pod picks up the current program and route map.
+		if err := netlink.FilterReplace(filter); err != nil {
+			return nil, fmt.Errorf("replacing bpf filter on ifindex %d: %w", ifindex, err)
+		}
 	}
 
 	return &tcLink{

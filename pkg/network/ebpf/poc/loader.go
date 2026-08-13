@@ -8,12 +8,10 @@
 package poc
 
 import (
-	"errors"
 	"fmt"
-	"os"
+	"path/filepath"
 
 	"github.com/cilium/ebpf"
-	"golang.org/x/sys/unix"
 )
 
 const (
@@ -66,17 +64,9 @@ func LoadOrCreateLocalRoutesMap(pinPath string) (*ebpf.Map, error) {
 }
 
 func loadOrCreateLPMTrieMap(pinPath, name string) (*ebpf.Map, error) {
-	// Prefer an already-pinned map so multiple loaders share the same instance.
-	m, err := ebpf.LoadPinnedMap(pinPath, nil)
-	if err == nil {
-		return m, nil
-	}
-	if !os.IsNotExist(err) && !errors.Is(err, unix.ENOENT) {
-		return nil, fmt.Errorf("loading pinned map %s: %w", pinPath, err)
-	}
-
 	spec := &ebpf.MapSpec{
 		Name:       name,
+		Pinning:    ebpf.PinByName,
 		Type:       ebpf.LPMTrie,
 		KeySize:    8, // sizeof(struct lpm_key)
 		ValueSize:  8, // sizeof(struct route_value)
@@ -84,8 +74,11 @@ func loadOrCreateLPMTrieMap(pinPath, name string) (*ebpf.Map, error) {
 		Flags:      bpfMapFlagNoPrealloc,
 	}
 
-	m, err = ebpf.NewMapWithOptions(spec, ebpf.MapOptions{
-		PinPath: pinPath,
+	// PinByName uses PinPath as the parent directory and pins the map at
+	// PinPath/name. Passing the full intended pin path as PinPath without
+	// PinByName silently skips pinning in cilium/ebpf v0.22+.
+	m, err := ebpf.NewMapWithOptions(spec, ebpf.MapOptions{
+		PinPath: filepath.Dir(pinPath),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("creating pinned route map %s: %w", pinPath, err)

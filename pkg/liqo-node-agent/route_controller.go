@@ -46,7 +46,7 @@ type RouteReconciler struct {
 	TunnelID       uint32
 }
 
-// +kubebuilder:rbac:groups=networking.liqo.io,resources=configurations,verbs=get;list;watch
+// +kubebuilder:rbac:groups=networking.liqo.io,resources=configurations,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=networking.liqo.io,resources=gatewayclients,verbs=get;list;watch
 // +kubebuilder:rbac:groups=networking.liqo.io,resources=gatewayservers,verbs=get;list;watch
 

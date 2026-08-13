@@ -64,6 +64,12 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	if pod.Spec.HostNetwork {
 		return ctrl.Result{}, nil
 	}
+	// Gateway pods run their own return-path setup (tc_gw_return.o on
+	 // liqo-tunnel). Injecting the pod forward-path program here would
+	 // conflict with that setup, so skip them.
+	 if pod.Labels != nil && pod.Labels["networking.liqo.io/component"] == "gateway" {
+		 return ctrl.Result{}, nil
+	 }
 	if pod.Status.Phase != corev1.PodRunning {
 		return ctrl.Result{}, nil
 	}

@@ -12,7 +12,7 @@ package returnpath
 import (
 	"errors"
 	"fmt"
-	"os"
+	"net"
 
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
@@ -129,6 +129,10 @@ func installPolicyRoute(tunnelIfindex int) error {
 	route := &netlink.Route{
 		LinkIndex: tunnelIfindex,
 		Table:     PolicyRouteTable,
+		Dst: &net.IPNet{
+			IP:   net.IPv4(0, 0, 0, 0),
+			Mask: net.CIDRMask(0, 32),
+		},
 	}
 	if err := netlink.RouteAdd(route); err != nil && !errors.Is(err, unix.EEXIST) {
 		return fmt.Errorf("adding default route in table %d: %w", PolicyRouteTable, err)
@@ -161,6 +165,17 @@ func cleanupPolicyRoute() error {
 }
 
 func createGeneveInterface(port uint16) (netlink.Link, error) {
+	// If the interface already exists, reuse it. This makes the gateway
+	// return-path setup idempotent across pod restarts.
+	link, err := netlink.LinkByName(DefaultInterfaceName)
+	if err == nil {
+		klog.InfoS("Geneve interface already exists, reusing", "interface", DefaultInterfaceName)
+		if err := netlink.LinkSetUp(link); err != nil {
+			return nil, fmt.Errorf("bringing up existing %s: %w", DefaultInterfaceName, err)
+		}
+		return link, nil
+	}
+
 	geneve := &netlink.Geneve{
 		LinkAttrs: netlink.LinkAttrs{
 			Name: DefaultInterfaceName,
@@ -169,16 +184,17 @@ func createGeneveInterface(port uint16) (netlink.Link, error) {
 		Dport:     port,
 	}
 
-	if err := netlink.LinkAdd(geneve); err != nil && !os.IsExist(err) {
+	if err := netlink.LinkAdd(geneve); err != nil {
 		return nil, fmt.Errorf("adding Geneve interface %s: %w", DefaultInterfaceName, err)
 	}
-	if err := netlink.LinkSetUp(geneve); err != nil {
-		return nil, fmt.Errorf("bringing up %s: %w", DefaultInterfaceName, err)
-	}
 
-	link, err := netlink.LinkByName(DefaultInterfaceName)
+	link, err = netlink.LinkByName(DefaultInterfaceName)
 	if err != nil {
 		return nil, fmt.Errorf("fetching %s: %w", DefaultInterfaceName, err)
+	}
+
+	if err := netlink.LinkSetUp(link); err != nil {
+		return nil, fmt.Errorf("bringing up %s: %w", DefaultInterfaceName, err)
 	}
 	return link, nil
 }

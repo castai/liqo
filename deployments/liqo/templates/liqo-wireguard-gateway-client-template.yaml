@@ -42,6 +42,9 @@ spec:
             spec:
               serviceAccount: "{{"{{ .Name }}"}}"
               serviceAccountName: "{{"{{ .Name }}"}}"
+              {{- if .Values.networking.ebpfOverlay.enabled }}
+              hostPID: true
+              {{- end }}
               {{- include "liqo.imagePullSecrets" . | nindent 14 }}
               {{- if .Values.networking.gatewayTemplates.pod.nodeSelector }}
               nodeSelector:
@@ -112,6 +115,10 @@ spec:
                 volumeMounts:
                 - name: ipc
                   mountPath: /ipc
+                {{- if .Values.networking.ebpfOverlay.enabled }}
+                - name: bpf
+                  mountPath: /sys/fs/bpf
+                {{- end }}
                 ports:
                 {{- if .Values.metrics.enabled }}
                 - containerPort: 8082
