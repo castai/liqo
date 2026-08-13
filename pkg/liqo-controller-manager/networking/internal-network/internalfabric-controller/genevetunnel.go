@@ -17,6 +17,7 @@ package internalfabriccontroller
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -30,18 +31,19 @@ import (
 	"github.com/liqotech/liqo/pkg/utils/resource"
 )
 
-func geneveTunnelName(internalFabric *networkingv1beta1.InternalFabric, internalNode *networkingv1beta1.InternalNode) string {
-	return fmt.Sprintf("%s-%s", internalFabric.Name, internalNode.Name)
+func geneveTunnelName(internalFabric *networkingv1beta1.InternalFabric, replicaID int32, internalNode *networkingv1beta1.InternalNode) string {
+	return fmt.Sprintf("%s-%d-%s", internalFabric.Name, replicaID, internalNode.Name)
 }
 
 func mutateGeneveTunnel(ctx context.Context, cl client.Client, tunnel *networkingv1beta1.GeneveTunnel,
-	internalFabric *networkingv1beta1.InternalFabric, internalNode *networkingv1beta1.InternalNode) error {
+	internalFabric *networkingv1beta1.InternalFabric, replicaID int32, internalNode *networkingv1beta1.InternalNode) error {
 	if tunnel.Labels == nil {
 		tunnel.Labels = make(map[string]string)
 	}
 
 	tunnel.Labels[consts.InternalFabricName] = internalFabric.Name
 	tunnel.Labels[consts.InternalNodeName] = internalNode.Name
+	tunnel.Labels[consts.GatewayReplicaID] = strconv.Itoa(int(replicaID))
 
 	tunnelID, err := id.GetGeneveTunnelManager(ctx, cl).Allocate(client.ObjectKeyFromObject(tunnel).String())
 	if err != nil {
@@ -69,15 +71,18 @@ func cleanupGeneveTunnels(ctx context.Context, cl client.Client,
 		return err
 	}
 
-	var nodes = make(map[string]any)
-	for i := range internalNodeList.Items {
-		node := &internalNodeList.Items[i]
-		nodes[node.Name] = nil
+	expected := make(map[string]struct{})
+	for i := range internalFabric.Spec.Replicas {
+		replica := &internalFabric.Spec.Replicas[i]
+		for j := range internalNodeList.Items {
+			node := &internalNodeList.Items[j]
+			expected[geneveTunnelName(internalFabric, replica.ReplicaID, node)] = struct{}{}
+		}
 	}
 
 	for i := range tunnelList.Items {
 		tunnel := &tunnelList.Items[i]
-		if _, ok := nodes[tunnel.Labels[consts.InternalNodeName]]; !ok {
+		if _, ok := expected[tunnel.Name]; !ok {
 			id.GetGeneveTunnelManager(ctx, cl).Release(client.ObjectKeyFromObject(tunnel).String())
 			if err := client.IgnoreNotFound(cl.Delete(ctx, tunnel)); err != nil {
 				return err
@@ -90,28 +95,31 @@ func cleanupGeneveTunnels(ctx context.Context, cl client.Client,
 
 func ensureGeneveTunnels(ctx context.Context, cl client.Client, s *runtime.Scheme,
 	internalFabric *networkingv1beta1.InternalFabric, internalNodeList *networkingv1beta1.InternalNodeList) error {
-	for i := range internalNodeList.Items {
-		node := &internalNodeList.Items[i]
+	for i := range internalFabric.Spec.Replicas {
+		replica := &internalFabric.Spec.Replicas[i]
+		for j := range internalNodeList.Items {
+			node := &internalNodeList.Items[j]
 
-		name := geneveTunnelName(internalFabric, node)
-		tunnel := &networkingv1beta1.GeneveTunnel{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      name,
-				Namespace: internalFabric.Namespace,
-			},
-		}
-
-		if _, err := resource.CreateOrUpdate(ctx, cl, tunnel, func() error {
-			if err := mutateGeneveTunnel(ctx, cl, tunnel, internalFabric, node); err != nil {
-				return fmt.Errorf("mutating GeneveTunnel %q: %w", client.ObjectKeyFromObject(tunnel), err)
+			name := geneveTunnelName(internalFabric, replica.ReplicaID, node)
+			tunnel := &networkingv1beta1.GeneveTunnel{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      name,
+					Namespace: internalFabric.Namespace,
+				},
 			}
-			return controllerutil.SetControllerReference(internalFabric, tunnel, s)
-		}); err != nil {
-			return err
+
+			if _, err := resource.CreateOrUpdate(ctx, cl, tunnel, func() error {
+				if err := mutateGeneveTunnel(ctx, cl, tunnel, internalFabric, replica.ReplicaID, node); err != nil {
+					return fmt.Errorf("mutating GeneveTunnel %q: %w", client.ObjectKeyFromObject(tunnel), err)
+				}
+				return controllerutil.SetControllerReference(internalFabric, tunnel, s)
+			}); err != nil {
+				return err
+			}
 		}
 	}
 
-	if len(internalNodeList.Items) > 0 {
+	if len(internalFabric.Spec.Replicas) > 0 && len(internalNodeList.Items) > 0 {
 		updated := controllerutil.AddFinalizer(internalFabric, consts.InternalFabricGeneveTunnelFinalizer)
 		if updated {
 			if err := cl.Update(ctx, internalFabric); err != nil {

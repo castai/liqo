@@ -318,7 +318,7 @@ func (r *WgGatewayServerReconciler) mutateFnWgServerService(service *corev1.Serv
 	if service.Spec.Selector == nil {
 		service.Spec.Selector = map[string]string{}
 	}
-	service.Spec.Selector[replicaIDLabel] = replicaStr
+	service.Spec.Selector[consts.GatewayReplicaID] = replicaStr
 
 	// Ensure the Service is owned by the per-replica Deployment.
 	return controllerutil.SetOwnerReference(deployment, service, r.Scheme)
@@ -473,6 +473,6 @@ func (r *WgGatewayServerReconciler) handleInternalEndpointStatus(ctx context.Con
 		return fmt.Errorf("retrieving gateway pods: %w", err)
 	}
 
-	wgServer.Status.InternalEndpoints = forgeInternalEndpoints(gwPods)
+	wgServer.Status.InternalEndpoints = forgeInternalEndpoints(gwPods, wgServer.Name)
 	return nil
 }

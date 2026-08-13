@@ -120,6 +120,10 @@ type InternalGatewayEndpoint struct {
 	IP *IP `json:"ip,omitempty"`
 	// Node is the name of the node where the endpoint is running.
 	Node *string `json:"node,omitempty"`
+	// ReplicaID is the stable identifier of the gateway replica.
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=63
+	ReplicaID int32 `json:"replicaID"`
 }
 
 // GatewayServerStatus defines the observed state of GatewayServer.

@@ -32,9 +32,27 @@ import (
 )
 
 func (r *InternalFabricReconciler) ensureRouteConfiguration(ctx context.Context, internalFabric *networkingv1beta1.InternalFabric) error {
-	if internalFabric.Spec.Interface.Node.Name == "" {
-		return fmt.Errorf("internal fabric %q has node interface name empty", client.ObjectKeyFromObject(internalFabric))
+	replicas := internalFabric.Spec.Replicas
+	if len(replicas) == 0 {
+		if internalFabric.Spec.Interface == nil {
+			return fmt.Errorf("internal fabric %q has no replicas and no deprecated interface", client.ObjectKeyFromObject(internalFabric))
+		}
+		replicas = []networkingv1beta1.InternalFabricReplica{
+			{Interface: *internalFabric.Spec.Interface},
+		}
 	}
+
+	for i := range replicas {
+		if replicas[i].Interface.Node.Name == "" {
+			return fmt.Errorf("internal fabric %q has node interface name empty for replica %d",
+				client.ObjectKeyFromObject(internalFabric), replicas[i].ReplicaID)
+		}
+	}
+
+	// Sort replicas by ID to produce a stable RouteConfiguration.
+	sort.Slice(replicas, func(i, j int) bool {
+		return replicas[i].ReplicaID < replicas[j].ReplicaID
+	})
 
 	route := &networkingv1beta1.RouteConfiguration{
 		ObjectMeta: metav1.ObjectMeta{
@@ -49,7 +67,6 @@ func (r *InternalFabricReconciler) ensureRouteConfiguration(ctx context.Context,
 		}
 		route.SetLabels(labels.Merge(route.Labels, fabric.ForgeRouteTargetLabels()))
 
-		// Add route rule for every remote CIDR
 		var rules []networkingv1beta1.Rule
 
 		var priority *int
@@ -57,35 +74,53 @@ func (r *InternalFabricReconciler) ensureRouteConfiguration(ctx context.Context,
 			priority = ptr.To(r.RouteConfigurationRulePriority)
 		}
 
-		rules = append(rules, networkingv1beta1.Rule{
-			Dst:      ptr.To(networkingv1beta1.CIDR(fmt.Sprintf("%s/32", internalFabric.Spec.Interface.Gateway.IP))),
-			Priority: priority,
-			Routes: []networkingv1beta1.Route{
-				{
-					Dst:   ptr.To(networkingv1beta1.CIDR(fmt.Sprintf("%s/32", internalFabric.Spec.Interface.Gateway.IP))),
-					Dev:   ptr.To(internalFabric.Spec.Interface.Node.Name),
-					Scope: ptr.To(networkingv1beta1.LinkScope),
+		// Add a link-scope route for each replica's gateway inner IP.
+		for i := range replicas {
+			replica := &replicas[i]
+			rules = append(rules, networkingv1beta1.Rule{
+				Dst:      ptr.To(networkingv1beta1.CIDR(fmt.Sprintf("%s/32", replica.Interface.Gateway.IP))),
+				Priority: priority,
+				Routes: []networkingv1beta1.Route{
+					{
+						Dst:   ptr.To(networkingv1beta1.CIDR(fmt.Sprintf("%s/32", replica.Interface.Gateway.IP))),
+						Dev:   ptr.To(replica.Interface.Node.Name),
+						Scope: ptr.To(networkingv1beta1.LinkScope),
+					},
 				},
-			},
-		})
+			})
+		}
 
 		remoteCIDRs := internalFabric.Spec.RemoteCIDRs
 		// sort slice to prevent useless updates if CIDRs are in different order
 		sort.Slice(remoteCIDRs, func(i, j int) bool {
 			return remoteCIDRs[i] < remoteCIDRs[j]
 		})
+
+		// Add one rule per remote CIDR.
+		// Use a classic single gateway when there is only one replica, otherwise use ECMP next-hops.
 		for _, remoteCIDR := range remoteCIDRs {
-			rule := networkingv1beta1.Rule{
-				Routes: []networkingv1beta1.Route{
-					{
-						Dst: ptr.To(remoteCIDR),
-						Gw:  ptr.To(internalFabric.Spec.Interface.Gateway.IP),
-					},
-				},
+			var route networkingv1beta1.Route
+			route.Dst = ptr.To(remoteCIDR)
+
+			if len(replicas) == 1 {
+				route.Gw = ptr.To(replicas[0].Interface.Gateway.IP)
+			} else {
+				nextHops := make([]networkingv1beta1.NextHop, 0, len(replicas))
+				for i := range replicas {
+					replica := &replicas[i]
+					nextHops = append(nextHops, networkingv1beta1.NextHop{
+						Gw:  replica.Interface.Gateway.IP,
+						Dev: replica.Interface.Node.Name,
+					})
+				}
+				route.NextHops = nextHops
+			}
+
+			rules = append(rules, networkingv1beta1.Rule{
+				Routes:   []networkingv1beta1.Route{route},
 				Dst:      ptr.To(remoteCIDR),
 				Priority: priority,
-			}
-			rules = append(rules, rule)
+			})
 		}
 
 		route.Spec = networkingv1beta1.RouteConfigurationSpec{
