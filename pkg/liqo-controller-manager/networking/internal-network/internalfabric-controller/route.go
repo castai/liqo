@@ -19,8 +19,10 @@ import (
 	"fmt"
 	"sort"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -28,11 +30,13 @@ import (
 
 	networkingv1beta1 "github.com/liqotech/liqo/apis/networking/v1beta1"
 	"github.com/liqotech/liqo/pkg/fabric"
+	"github.com/liqotech/liqo/pkg/gateway/forge"
 	"github.com/liqotech/liqo/pkg/utils/resource"
 )
 
 func (r *InternalFabricReconciler) ensureRouteConfiguration(ctx context.Context, internalFabric *networkingv1beta1.InternalFabric) error {
 	replicas := internalFabric.Spec.Replicas
+	deprecated := false
 	if len(replicas) == 0 {
 		if internalFabric.Spec.Interface == nil {
 			return fmt.Errorf("internal fabric %q has no replicas and no deprecated interface", client.ObjectKeyFromObject(internalFabric))
@@ -40,6 +44,7 @@ func (r *InternalFabricReconciler) ensureRouteConfiguration(ctx context.Context,
 		replicas = []networkingv1beta1.InternalFabricReplica{
 			{Interface: *internalFabric.Spec.Interface},
 		}
+		deprecated = true
 	}
 
 	for i := range replicas {
@@ -53,6 +58,19 @@ func (r *InternalFabricReconciler) ensureRouteConfiguration(ctx context.Context,
 	sort.Slice(replicas, func(i, j int) bool {
 		return replicas[i].ReplicaID < replicas[j].ReplicaID
 	})
+
+	// Filter out replicas whose Connection is not in Connected state.
+	// For the deprecated single-interface path we cannot map to a Connection,
+	// so we keep the existing behavior.
+	connectedReplicas := replicas
+	if !deprecated {
+		filtered, err := r.connectedReplicas(ctx, internalFabric, replicas)
+		if err != nil {
+			return fmt.Errorf("filtering connected replicas for internal fabric %q: %w",
+				client.ObjectKeyFromObject(internalFabric), err)
+		}
+		connectedReplicas = filtered
+	}
 
 	route := &networkingv1beta1.RouteConfiguration{
 		ObjectMeta: metav1.ObjectMeta{
@@ -74,9 +92,9 @@ func (r *InternalFabricReconciler) ensureRouteConfiguration(ctx context.Context,
 			priority = ptr.To(r.RouteConfigurationRulePriority)
 		}
 
-		// Add a link-scope route for each replica's gateway inner IP.
-		for i := range replicas {
-			replica := &replicas[i]
+		// Add a link-scope route for each connected replica's gateway inner IP.
+		for i := range connectedReplicas {
+			replica := &connectedReplicas[i]
 			rules = append(rules, networkingv1beta1.Rule{
 				Dst:      ptr.To(networkingv1beta1.CIDR(fmt.Sprintf("%s/32", replica.Interface.Gateway.IP))),
 				Priority: priority,
@@ -97,17 +115,17 @@ func (r *InternalFabricReconciler) ensureRouteConfiguration(ctx context.Context,
 		})
 
 		// Add one rule per remote CIDR.
-		// Use a classic single gateway when there is only one replica, otherwise use ECMP next-hops.
+		// Use a classic single gateway when there is only one connected replica, otherwise use ECMP next-hops.
 		for _, remoteCIDR := range remoteCIDRs {
 			var route networkingv1beta1.Route
 			route.Dst = ptr.To(remoteCIDR)
 
-			if len(replicas) == 1 {
-				route.Gw = ptr.To(replicas[0].Interface.Gateway.IP)
+			if len(connectedReplicas) == 1 {
+				route.Gw = ptr.To(connectedReplicas[0].Interface.Gateway.IP)
 			} else {
-				nextHops := make([]networkingv1beta1.NextHop, 0, len(replicas))
-				for i := range replicas {
-					replica := &replicas[i]
+				nextHops := make([]networkingv1beta1.NextHop, 0, len(connectedReplicas))
+				for i := range connectedReplicas {
+					replica := &connectedReplicas[i]
 					nextHops = append(nextHops, networkingv1beta1.NextHop{
 						Gw:  replica.Interface.Gateway.IP,
 						Dev: replica.Interface.Node.Name,
@@ -138,6 +156,55 @@ func (r *InternalFabricReconciler) ensureRouteConfiguration(ctx context.Context,
 	}
 
 	return nil
+}
+
+// connectedReplicas returns the subset of replicas whose related Connection resource is in Connected state.
+func (r *InternalFabricReconciler) connectedReplicas(ctx context.Context,
+	internalFabric *networkingv1beta1.InternalFabric, replicas []networkingv1beta1.InternalFabricReplica) (
+	[]networkingv1beta1.InternalFabricReplica, error) {
+	gatewayName, ok := gatewayNameFromOwnerRef(internalFabric)
+	if !ok {
+		klog.V(4).Infof("InternalFabric %q has no gateway owner reference, cannot filter by Connection state",
+			client.ObjectKeyFromObject(internalFabric))
+		return replicas, nil
+	}
+
+	connected := make([]networkingv1beta1.InternalFabricReplica, 0, len(replicas))
+	for i := range replicas {
+		replica := &replicas[i]
+		connectionName := forge.ReplicaResourceName(gatewayName, replica.ReplicaID)
+		connection := &networkingv1beta1.Connection{}
+		if err := r.Get(ctx, types.NamespacedName{
+			Namespace: internalFabric.Namespace,
+			Name:      connectionName,
+		}, connection); err != nil {
+			if apierrors.IsNotFound(err) {
+				klog.V(4).Infof("Connection %q/%q not found, skipping replica %d",
+					internalFabric.Namespace, connectionName, replica.ReplicaID)
+				continue
+			}
+			return nil, fmt.Errorf("getting Connection %q/%q: %w",
+				internalFabric.Namespace, connectionName, err)
+		}
+
+		if connection.Status.Value == networkingv1beta1.Connected {
+			connected = append(connected, *replica)
+		} else {
+			klog.V(4).Infof("Connection %q/%q status is %q, skipping replica %d",
+				internalFabric.Namespace, connectionName, connection.Status.Value, replica.ReplicaID)
+		}
+	}
+
+	return connected, nil
+}
+
+// gatewayNameFromOwnerRef returns the name of the gateway owner reference of the InternalFabric.
+func gatewayNameFromOwnerRef(internalFabric *networkingv1beta1.InternalFabric) (string, bool) {
+	owner := metav1.GetControllerOf(internalFabric)
+	if owner == nil {
+		return "", false
+	}
+	return owner.Name, true
 }
 
 // GenerateRouteConfigurationName returns the name of the RouteConfiguration associated to the InternalFabric.
