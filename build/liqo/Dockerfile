@@ -4,9 +4,14 @@ FROM alpine:3.20
 ARG COMPONENT
 ARG TARGETARCH
 
-RUN if [ "$COMPONENT" = "geneve" ] || [ "$COMPONENT" = "wireguard" ] || [ "$COMPONENT" = "gateway" ]; then \
-    set -x; \
-    apk add --no-cache iproute2 nftables bash wireguard-tools tcpdump conntrack-tools curl iputils; \
+RUN set -e; \
+    if [ "$COMPONENT" = "geneve" ] || [ "$COMPONENT" = "wireguard" ] || [ "$COMPONENT" = "gateway" ] || [ "$COMPONENT" = "fabric" ]; then \
+        set -x; \
+        apk add --no-cache iproute2 nftables bash tcpdump conntrack-tools curl iputils; \
+    fi; \
+    if [ "$COMPONENT" = "wireguard" ]; then \
+        set -x; \
+        apk add --no-cache wireguard-tools; \
     fi
 
 # Copy the correct binary for the architecture
