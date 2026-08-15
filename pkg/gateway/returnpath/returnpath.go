@@ -5,7 +5,7 @@
 
 // Package returnpath configures the eBPF-based gateway return path for the
 // Liqo overlay PoC. When enabled it creates a gw-liqo-tun Geneve interface in
-// external-metadata mode and attaches tc_gw_return.o to the egress of the
+// external-metadata mode and attaches tc_gw_return.o to the ingress of the
 // gateway's liqo-tunnel interface.
 package returnpath
 
@@ -37,7 +37,7 @@ const (
 )
 
 // Setup creates the gw-liqo-tun interface and attaches the eBPF return-path
-// program to liqo-tunnel egress. It returns a closer that can be used to tear
+// program to liqo-tunnel ingress. It returns a closer that can be used to tear
 // down the eBPF attachment. The Geneve interface is left in place to avoid
 // disrupting ongoing traffic.
 func Setup(opts Options) (func() error, error) {
@@ -84,10 +84,10 @@ func Setup(opts Options) (func() error, error) {
 		return nil, fmt.Errorf("loading gateway return program: %w", err)
 	}
 
-	attachment, err := poc.AttachTCProgram(prog, tunnelLink.Attrs().Index)
+	attachment, err := poc.AttachTCProgramIngress(prog, tunnelLink.Attrs().Index)
 	if err != nil {
 		prog.Close()
-		return nil, fmt.Errorf("attaching return program to %s: %w", tunnel.TunnelInterfaceName, err)
+		return nil, fmt.Errorf("attaching return program to %s ingress: %w", tunnel.TunnelInterfaceName, err)
 	}
 
 	klog.InfoS("eBPF return path configured",

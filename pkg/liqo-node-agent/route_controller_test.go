@@ -19,13 +19,13 @@ import (
 	"github.com/liqotech/liqo/pkg/consts"
 )
 
-func TestIPv4ToU32(t *testing.T) {
+func TestIPv4ToMapKey(t *testing.T) {
 	cases := []string{"0.0.0.0", "10.0.0.1", "192.168.1.1", "255.255.255.255"}
 
 	for _, tc := range cases {
 		t.Run(tc, func(t *testing.T) {
 			ip := net.ParseIP(tc).To4()
-			got := ipv4ToU32(ip)
+			got := ipv4ToMapKey(ip)
 
 			var raw [4]byte
 			binary.NativeEndian.PutUint32(raw[:], got)
@@ -34,8 +34,24 @@ func TestIPv4ToU32(t *testing.T) {
 	}
 }
 
-func TestIPv4ToU32Nil(t *testing.T) {
-	assert.Equal(t, uint32(0), ipv4ToU32(nil))
+func TestIPv4ToTunnelIPv4(t *testing.T) {
+	cases := []string{"0.0.0.0", "10.0.0.1", "192.168.1.1", "255.255.255.255"}
+
+	for _, tc := range cases {
+		t.Run(tc, func(t *testing.T) {
+			ip := net.ParseIP(tc).To4()
+			got := ipv4ToTunnelIPv4(ip)
+
+			var raw [4]byte
+			binary.BigEndian.PutUint32(raw[:], got)
+			assert.Equal(t, []byte(ip), raw[:])
+		})
+	}
+}
+
+func TestIPv4HelpersNil(t *testing.T) {
+	assert.Equal(t, uint32(0), ipv4ToMapKey(nil))
+	assert.Equal(t, uint32(0), ipv4ToTunnelIPv4(nil))
 }
 
 func TestInternalEndpointIP(t *testing.T) {

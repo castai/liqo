@@ -49,6 +49,24 @@ spec:
       serviceAccountName: {{ include "liqo.prefixedName" $nodeAgentConfig }}
       hostPID: true
       {{- include "liqo.imagePullSecrets" . | nindent 6 -}}
+      initContainers:
+        - image: {{ .Values.networking.nodeAgent.image.name }}{{ include "liqo.suffix" $nodeAgentConfig }}:{{ include "liqo.version" $nodeAgentConfig }}
+          imagePullPolicy: {{ .Values.pullPolicy }}
+          name: mount-bpffs
+          command:
+            - nsenter
+            - -t
+            - "1"
+            - -m
+            - --
+            - sh
+            - -c
+            - mountpoint -q /sys/fs/bpf || mount -t bpf none /sys/fs/bpf
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: bpf
+              mountPath: /sys/fs/bpf
       containers:
         - image: {{ .Values.networking.nodeAgent.image.name }}{{ include "liqo.suffix" $nodeAgentConfig }}:{{ include "liqo.version" $nodeAgentConfig }}
           imagePullPolicy: {{ .Values.pullPolicy }}

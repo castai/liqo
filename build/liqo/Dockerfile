@@ -4,9 +4,9 @@ FROM alpine:3.20
 ARG COMPONENT
 ARG TARGETARCH
 
-RUN if [ "$COMPONENT" = "geneve" ] || [ "$COMPONENT" = "wireguard" ] || [ "$COMPONENT" = "gateway" ]; then \
+RUN if [ "$COMPONENT" = "geneve" ] || [ "$COMPONENT" = "wireguard" ] || [ "$COMPONENT" = "gateway" ] || [ "$COMPONENT" = "liqo-node-agent" ]; then \
     set -x; \
-    apk add --no-cache iproute2 nftables bash wireguard-tools tcpdump conntrack-tools curl iputils; \
+    apk add --no-cache iproute2 nftables bash wireguard-tools tcpdump conntrack-tools curl iputils util-linux; \
     fi
 
 # Copy the correct binary for the architecture

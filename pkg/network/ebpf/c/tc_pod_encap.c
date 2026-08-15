@@ -74,8 +74,11 @@ int tc_pod_encap(struct __sk_buff *skb)
 	if (bpf_skb_set_tunnel_key(skb, &tkey, sizeof(tkey), BPF_F_ZERO_CSUM_TX))
 		return TC_ACT_OK;
 
-	/* Redirect to the pod-local Geneve interface. */
-	return bpf_redirect(target_ifindex, BPF_F_INGRESS);
+	/*
+	 * Redirect to the pod-local Geneve interface egress path so the kernel
+	 * performs Geneve encapsulation using the tunnel metadata set above.
+	 */
+	return bpf_redirect(target_ifindex, 0);
 }
 
 char _license[] __section("license") = LIQO_EBPF_LICENSE;

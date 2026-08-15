@@ -209,10 +209,10 @@ func (r *RouteReconciler) updateRoute(m *ebpf.Map, cidr networkingv1beta1.CIDR, 
 	ones, _ := ipNet.Mask.Size()
 	key := poc.LPMKey{
 		PrefixLen: uint32(ones),
-		Addr:      ipv4ToU32(ipNet.IP),
+		Addr:      ipv4ToMapKey(ipNet.IP),
 	}
 	val := poc.RouteValue{
-		GatewayIP: ipv4ToU32(gatewayIP),
+		GatewayIP: ipv4ToTunnelIPv4(gatewayIP),
 		TunnelID:  tunnelID,
 	}
 
@@ -222,13 +222,23 @@ func (r *RouteReconciler) updateRoute(m *ebpf.Map, cidr networkingv1beta1.CIDR, 
 	return nil
 }
 
-func ipv4ToU32(ip net.IP) uint32 {
+func ipv4ToMapKey(ip net.IP) uint32 {
 	ip = ip.To4()
 	if ip == nil {
 		return 0
 	}
 	// Preserve the raw IPv4 byte order as it appears in packet memory.
-	// The eBPF programs read/write __u32 IPv4 values directly from packet and
-	// map memory, so the user-space encoding must match the host native endian.
+	// The pod eBPF program reads ip->daddr as a host-endian __u32 and uses it
+	// directly as the LPM trie lookup key.
 	return binary.NativeEndian.Uint32(ip)
+}
+
+func ipv4ToTunnelIPv4(ip net.IP) uint32 {
+	ip = ip.To4()
+	if ip == nil {
+		return 0
+	}
+	// bpf_tunnel_key.remote_ipv4 is consumed as an IPv4 address in network byte
+	// order by the tunnel encapsulation path, so keep the canonical wire order.
+	return binary.BigEndian.Uint32(ip)
 }

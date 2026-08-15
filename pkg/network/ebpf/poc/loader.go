@@ -10,8 +10,10 @@ package poc
 import (
 	"fmt"
 	"path/filepath"
+	"sync"
 
 	"github.com/cilium/ebpf"
+	"github.com/cilium/ebpf/rlimit"
 )
 
 const (
@@ -31,6 +33,10 @@ const (
 	// exported by all versions of golang.org/x/sys/unix used in the tree.
 	bpfMapFlagNoPrealloc uint32 = 1
 )
+
+var raiseMemlockOnce sync.Once
+
+var raiseMemlockErr error
 
 // LPMKey mirrors struct lpm_key in common.h.
 type LPMKey struct {
@@ -64,6 +70,13 @@ func LoadOrCreateLocalRoutesMap(pinPath string) (*ebpf.Map, error) {
 }
 
 func loadOrCreateLPMTrieMap(pinPath, name string) (*ebpf.Map, error) {
+	raiseMemlockOnce.Do(func() {
+		raiseMemlockErr = rlimit.RemoveMemlock()
+	})
+	if raiseMemlockErr != nil {
+		return nil, fmt.Errorf("raising memlock rlimit: %w", raiseMemlockErr)
+	}
+
 	spec := &ebpf.MapSpec{
 		Name:       name,
 		Pinning:    ebpf.PinByName,

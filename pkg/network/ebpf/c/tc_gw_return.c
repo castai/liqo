@@ -39,16 +39,18 @@ int tc_gw_return(struct __sk_buff *skb)
 	struct route_value *rv;
 	struct bpf_tunnel_key tkey;
 
-	/* Parse Ethernet header. */
+	/*
+	 * liqo-tunnel is a point-to-point WireGuard device (link/none), so packets
+	 * arrive without an Ethernet header. Keep a fallback for L2 devices to make
+	 * the parser robust if the attach point changes during the PoC.
+	 */
 	eth = data;
-	if ((void *)(eth + 1) > data_end)
-		return TC_ACT_OK;
+	if ((void *)(eth + 1) <= data_end && eth->h_proto == bpf_htons(ETH_P_IP)) {
+		ip = (struct iphdr *)((void *)eth + sizeof(*eth));
+	} else {
+		ip = (struct iphdr *)data;
+	}
 
-	if (eth->h_proto != bpf_htons(ETH_P_IP))
-		return TC_ACT_OK;
-
-	/* Parse IPv4 header. */
-	ip = (struct iphdr *)((void *)eth + sizeof(*eth));
 	if ((void *)(ip + 1) > data_end)
 		return TC_ACT_OK;
 
@@ -78,8 +80,11 @@ int tc_gw_return(struct __sk_buff *skb)
 	if (bpf_skb_set_tunnel_key(skb, &tkey, sizeof(tkey), BPF_F_ZERO_CSUM_TX))
 		return TC_ACT_OK;
 
-	/* Redirect to gw-liqo-tun. */
-	return bpf_redirect(target_ifindex, BPF_F_INGRESS);
+	/*
+	 * Redirect to gw-liqo-tun egress so the Geneve device encapsulates the
+	 * packet toward the destination pod using the metadata set above.
+	 */
+	return bpf_redirect(target_ifindex, 0);
 }
 
 char _license[] __section("license") = LIQO_EBPF_LICENSE;

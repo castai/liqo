@@ -7,9 +7,9 @@ package poc
 
 import (
 	"errors"
+	"io"
 
 	"github.com/cilium/ebpf"
-	"github.com/cilium/ebpf/link"
 )
 
 // NetnsAction is a no-op on non-Linux platforms.
@@ -18,6 +18,11 @@ func NetnsAction(_ string, action func() error) error {
 }
 
 // AttachTCProgram is not supported on non-Linux platforms.
-func AttachTCProgram(*ebpf.Program, int) (link.Link, error) {
+func AttachTCProgram(*ebpf.Program, int) (io.Closer, error) {
+	return nil, errors.New("TC attachment is only supported on linux")
+}
+
+// AttachTCProgramIngress is not supported on non-Linux platforms.
+func AttachTCProgramIngress(*ebpf.Program, int) (io.Closer, error) {
 	return nil, errors.New("TC attachment is only supported on linux")
 }

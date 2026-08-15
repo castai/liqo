@@ -16,6 +16,13 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+type tcDirection uint32
+
+const (
+	tcDirectionIngress tcDirection = netlink.HANDLE_MIN_INGRESS
+	tcDirectionEgress  tcDirection = netlink.HANDLE_MIN_EGRESS
+)
+
 // NetnsAction runs action inside the network namespace identified by nsPath
 // (e.g. "/proc/<pid>/ns/net") and restores the original namespace on return.
 func NetnsAction(nsPath string, action func() error) error {
@@ -48,6 +55,16 @@ func NetnsAction(nsPath string, action func() error) error {
 // current network namespace using a clsact qdisc. It returns an io.Closer
 // that detaches the program and removes the qdisc when closed.
 func AttachTCProgram(prog *ebpf.Program, ifindex int) (io.Closer, error) {
+	return attachTCProgram(prog, ifindex, tcDirectionEgress)
+}
+
+// AttachTCProgramIngress attaches prog to the ingress side of ifindex inside
+// the current network namespace using a clsact qdisc.
+func AttachTCProgramIngress(prog *ebpf.Program, ifindex int) (io.Closer, error) {
+	return attachTCProgram(prog, ifindex, tcDirectionIngress)
+}
+
+func attachTCProgram(prog *ebpf.Program, ifindex int, direction tcDirection) (io.Closer, error) {
 	if prog == nil {
 		return nil, errors.New("program is nil")
 	}
@@ -65,7 +82,7 @@ func AttachTCProgram(prog *ebpf.Program, ifindex int) (io.Closer, error) {
 	filter := &netlink.BpfFilter{
 		FilterAttrs: netlink.FilterAttrs{
 			LinkIndex: ifindex,
-			Parent:    netlink.HANDLE_MIN_EGRESS,
+			Parent:    uint32(direction),
 			Handle:    1,
 			Protocol:  unix.ETH_P_ALL,
 			Priority:  1,
@@ -88,6 +105,7 @@ func AttachTCProgram(prog *ebpf.Program, ifindex int) (io.Closer, error) {
 	return &tcLink{
 		prog:    prog,
 		ifindex: ifindex,
+		direction: direction,
 		filter:  filter,
 		qdisc:   qdisc,
 	}, nil
@@ -97,6 +115,7 @@ func AttachTCProgram(prog *ebpf.Program, ifindex int) (io.Closer, error) {
 type tcLink struct {
 	prog    *ebpf.Program
 	ifindex int
+	direction tcDirection
 	filter  *netlink.BpfFilter
 	qdisc   *netlink.Clsact
 }
