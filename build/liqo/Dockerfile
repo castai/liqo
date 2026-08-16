@@ -6,7 +6,7 @@ ARG TARGETARCH
 
 RUN if [ "$COMPONENT" = "geneve" ] || [ "$COMPONENT" = "wireguard" ] || [ "$COMPONENT" = "gateway" ] || [ "$COMPONENT" = "liqo-node-agent" ]; then \
     set -x; \
-    apk add --no-cache iproute2 nftables bash wireguard-tools tcpdump conntrack-tools curl iputils util-linux; \
+    apk add --no-cache iproute2 nftables bash wireguard-tools tcpdump conntrack-tools curl iputils util-linux bpftool; \
     fi
 
 # Copy the correct binary for the architecture

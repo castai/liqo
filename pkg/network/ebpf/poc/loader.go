@@ -115,6 +115,43 @@ func LoadGatewayReturnProgram(objectPath string, targetIfindex uint32, localRout
 	return loadProgram(objectPath, "tc_gw_return", targetIfindex, localRoutesMap)
 }
 
+// LoadGatewayForwardProgram loads tc_gw_forward.o, rewrites target_ifindex
+// to the ifindex of the WireGuard tunnel interface (liqo-tunnel), and returns
+// the loaded program. No map replacement is needed — the program redirects
+// ALL traffic from the Geneve decapsulation path to WireGuard unconditionally.
+func LoadGatewayForwardProgram(objectPath string, targetIfindex uint32) (*ebpf.Program, error) {
+	return loadProgram(objectPath, "tc_gw_forward", targetIfindex, nil)
+}
+
+// LoadGeneveRxProgram loads tc_geneve_rx.o. This program doesn't use
+// target_ifindex or any maps — it simply forces the kernel to accept
+// decapsulated Geneve packets as locally destined (PACKET_HOST) regardless
+// of the zero-MAC Ethernet header pushed by the gateway's tc_gw_return.
+func LoadGeneveRxProgram(objectPath string) (*ebpf.Program, error) {
+	spec, err := ebpf.LoadCollectionSpec(objectPath)
+	if err != nil {
+		return nil, fmt.Errorf("loading collection spec %s: %w", objectPath, err)
+	}
+
+	opts := ebpf.CollectionOptions{
+		Maps: ebpf.MapOptions{
+			PinPath: filepath.Dir(DefaultRoutesMapPath),
+		},
+	}
+
+	coll, err := ebpf.NewCollectionWithOptions(spec, opts)
+	if err != nil {
+		return nil, fmt.Errorf("loading collection: %w", err)
+	}
+	defer coll.Close()
+
+	prog := coll.Programs["tc_geneve_rx"]
+	if prog == nil {
+		return nil, fmt.Errorf("program tc_geneve_rx not found in %s", objectPath)
+	}
+	return prog.Clone()
+}
+
 func loadProgram(objectPath, progName string, targetIfindex uint32, replacementMap *ebpf.Map) (*ebpf.Program, error) {
 	spec, err := ebpf.LoadCollectionSpec(objectPath)
 	if err != nil {
@@ -129,7 +166,11 @@ func loadProgram(objectPath, progName string, targetIfindex uint32, replacementM
 		return nil, fmt.Errorf("rewriting target_ifindex: %w", err)
 	}
 
-	opts := ebpf.CollectionOptions{}
+	opts := ebpf.CollectionOptions{
+		Maps: ebpf.MapOptions{
+			PinPath: filepath.Dir(DefaultRoutesMapPath),
+		},
+	}
 	if replacementMap != nil {
 		var mapName string
 		switch progName {

@@ -16,6 +16,7 @@ type InjectRequest struct {
 	PID            int
 	RouteMapPath   string
 	PodEncapObject string
+	GeneveRxObject string
 	TunnelName     string
 	GenevePort     uint16
 }

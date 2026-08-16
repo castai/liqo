@@ -10,12 +10,9 @@
 package returnpath
 
 import (
-	"errors"
 	"fmt"
-	"net"
 
 	"github.com/vishvananda/netlink"
-	"golang.org/x/sys/unix"
 	"k8s.io/klog/v2"
 
 	"github.com/liqotech/liqo/pkg/gateway/tunnel"
@@ -28,12 +25,8 @@ const (
 	DefaultInterfaceName = "gw-liqo-tun"
 	// DefaultObjectPath is the default path to the tc_gw_return.o object.
 	DefaultObjectPath = "/opt/liqo/ebpf/tc_gw_return.o"
-	// PolicyRouteTable is the routing table used for traffic decapsulated by
-	// gw-liqo-tun.  Any packet coming from that interface is routed to the
-	// WireGuard tunnel (liqo-tunnel) via this table.
-	PolicyRouteTable = 100
-	// PolicyRoutePriority is the priority of the ip rule matching iif gw-liqo-tun.
-	PolicyRoutePriority = 100
+	// DefaultForwardObjectPath is the default path to the tc_gw_forward.o object.
+	DefaultForwardObjectPath = "/opt/liqo/ebpf/tc_gw_forward.o"
 )
 
 // Setup creates the gw-liqo-tun interface and attaches the eBPF return-path
@@ -95,14 +88,32 @@ func Setup(opts Options) (func() error, error) {
 		"tunnel", tunnel.TunnelInterfaceName,
 		"ifindex", tunnelLink.Attrs().Index)
 
-	if err := installPolicyRoute(tunnelLink.Attrs().Index); err != nil {
+	// Attach tc_gw_forward to gw-liqo-tun ingress to redirect ALL Geneve-decapsulated
+	// traffic directly to the WireGuard tunnel interface, replacing the host-level
+	// policy routing (ip rule + ip route table 100). This ensures the CNI never
+	// sees remote pod traffic — it only sees local pod-to-pod traffic.
+	forwardProg, err := poc.LoadGatewayForwardProgram(DefaultForwardObjectPath, uint32(tunnelLink.Attrs().Index))
+	if err != nil {
 		_ = attachment.Close()
-		return nil, fmt.Errorf("installing policy route: %w", err)
+		return nil, fmt.Errorf("loading gateway forward program: %w", err)
 	}
+
+	forwardAttachment, err := poc.AttachTCProgramIngress(forwardProg, link.Attrs().Index)
+	if err != nil {
+		forwardProg.Close()
+		_ = attachment.Close()
+		return nil, fmt.Errorf("attaching forward program to %s ingress: %w", DefaultInterfaceName, err)
+	}
+
+	klog.InfoS("eBPF forward path configured",
+		"interface", DefaultInterfaceName,
+		"tunnel", tunnel.TunnelInterfaceName,
+		"geneve_ifindex", link.Attrs().Index,
+		"tunnel_ifindex", tunnelLink.Attrs().Index)
 
 	return func() error {
 		var closeErr error
-		if err := cleanupPolicyRoute(); err != nil {
+		if err := forwardAttachment.Close(); err != nil {
 			closeErr = err
 		}
 		if err := attachment.Close(); err != nil {
@@ -112,56 +123,6 @@ func Setup(opts Options) (func() error, error) {
 		}
 		return closeErr
 	}, nil
-}
-
-func installPolicyRoute(tunnelIfindex int) error {
-	// Route any packet decapsulated from gw-liqo-tun through the dedicated
-	// routing table, where the only/default route points at the WireGuard
-	// tunnel interface.
-	rule := netlink.NewRule()
-	rule.IifName = DefaultInterfaceName
-	rule.Table = PolicyRouteTable
-	rule.Priority = PolicyRoutePriority
-	if err := netlink.RuleAdd(rule); err != nil && !errors.Is(err, unix.EEXIST) {
-		return fmt.Errorf("adding ip rule iif %s table %d: %w", DefaultInterfaceName, PolicyRouteTable, err)
-	}
-
-	route := &netlink.Route{
-		LinkIndex: tunnelIfindex,
-		Table:     PolicyRouteTable,
-		Dst: &net.IPNet{
-			IP:   net.IPv4(0, 0, 0, 0),
-			Mask: net.CIDRMask(0, 32),
-		},
-	}
-	if err := netlink.RouteAdd(route); err != nil && !errors.Is(err, unix.EEXIST) {
-		return fmt.Errorf("adding default route in table %d: %w", PolicyRouteTable, err)
-	}
-
-	return nil
-}
-
-func cleanupPolicyRoute() error {
-	var closeErr error
-
-	rule := netlink.NewRule()
-	rule.IifName = DefaultInterfaceName
-	rule.Table = PolicyRouteTable
-	rule.Priority = PolicyRoutePriority
-	if err := netlink.RuleDel(rule); err != nil {
-		closeErr = fmt.Errorf("deleting ip rule iif %s table %d: %w", DefaultInterfaceName, PolicyRouteTable, err)
-	}
-
-	route := &netlink.Route{
-		Table: PolicyRouteTable,
-	}
-	if err := netlink.RouteDel(route); err != nil {
-		if closeErr == nil {
-			closeErr = fmt.Errorf("deleting default route in table %d: %w", PolicyRouteTable, err)
-		}
-	}
-
-	return closeErr
 }
 
 func createGeneveInterface(port uint16) (netlink.Link, error) {

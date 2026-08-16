@@ -21,6 +21,7 @@ type PodReconciler struct {
 	NodeName       string
 	RouteMapPath   string
 	PodEncapObject string
+	GeneveRxObject string
 	PodTunnelName  string
 	GenevePort     uint16
 	Injector       Injector
@@ -98,6 +99,7 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		PID:            pid,
 		RouteMapPath:   r.RouteMapPath,
 		PodEncapObject: r.PodEncapObject,
+		GeneveRxObject: r.GeneveRxObject,
 		TunnelName:     r.PodTunnelName,
 		GenevePort:     r.GenevePort,
 	}); err != nil {

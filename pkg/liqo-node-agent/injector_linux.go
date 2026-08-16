@@ -38,6 +38,10 @@ func (i *ebpfInjector) Inject(ctx context.Context, req InjectRequest) error {
 			return fmt.Errorf("finding eth0 in pod netns: %w", err)
 		}
 
+		if err := disableTXChecksumOffload("eth0"); err != nil {
+			return err
+		}
+
 		// Create the pod-local Geneve LWT interface in external metadata mode.
 		// FlowBased tells the kernel that the eBPF program will provide the
 		// tunnel destination and VNI via bpf_skb_set_tunnel_key.
@@ -81,6 +85,19 @@ func (i *ebpfInjector) Inject(ctx context.Context, req InjectRequest) error {
 
 		if _, err := poc.AttachTCProgram(prog, eth0.Attrs().Index); err != nil {
 			return fmt.Errorf("attaching eBPF to eth0: %w", err)
+		}
+
+		// Attach tc_geneve_rx to liqo-tun ingress to force the kernel to
+		// accept decapsulated Geneve packets as locally destined (PACKET_HOST),
+		// overriding the zero-MAC Ethernet header pushed by the gateway.
+		rxProg, err := poc.LoadGeneveRxProgram(req.GeneveRxObject)
+		if err != nil {
+			return fmt.Errorf("loading geneve rx program: %w", err)
+		}
+		defer rxProg.Close()
+
+		if _, err := poc.AttachTCProgramIngress(rxProg, tun.Attrs().Index); err != nil {
+			return fmt.Errorf("attaching geneve rx to %s: %w", req.TunnelName, err)
 		}
 
 		return nil

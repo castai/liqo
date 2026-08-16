@@ -19,6 +19,8 @@ type Options struct {
 	LocalRoutesMapPath string
 	// PodEncapObject is the filesystem path to tc_pod_encap.o.
 	PodEncapObject string
+	// GeneveRxObject is the filesystem path to tc_geneve_rx.o.
+	GeneveRxObject string
 	// GwReturnObject is the filesystem path to tc_gw_return.o.
 	GwReturnObject string
 	// PodTunnelName is the name of the Geneve interface created inside pods.
@@ -38,6 +40,7 @@ func NewOptions() *Options {
 		RouteMapPath:       "/sys/fs/bpf/liqo_routes_poc",
 		LocalRoutesMapPath: "/sys/fs/bpf/liqo_local_routes_poc",
 		PodEncapObject:     "/opt/liqo/ebpf/tc_pod_encap.o",
+		GeneveRxObject:    "/opt/liqo/ebpf/tc_geneve_rx.o",
 		GwReturnObject: "/opt/liqo/ebpf/tc_gw_return.o",
 		PodTunnelName:  "liqo-tun",
 		GenevePort:     6091,
@@ -52,6 +55,7 @@ func InitFlags(flags *pflag.FlagSet, o *Options) {
 	flags.StringVar(&o.RouteMapPath, "route-map-path", o.RouteMapPath, "Pinned path for the shared eBPF route map (forward path)")
 	flags.StringVar(&o.LocalRoutesMapPath, "local-routes-map-path", o.LocalRoutesMapPath, "Pinned path for the gateway return-path eBPF map")
 	flags.StringVar(&o.PodEncapObject, "pod-encap-object", o.PodEncapObject, "Path to the tc_pod_encap.o eBPF object")
+	flags.StringVar(&o.GeneveRxObject, "geneve-rx-object", o.GeneveRxObject, "Path to the tc_geneve_rx.o eBPF object")
 	flags.StringVar(&o.GwReturnObject, "gw-return-object", o.GwReturnObject, "Path to the tc_gw_return.o eBPF object")
 	flags.StringVar(&o.PodTunnelName, "pod-tunnel-name", o.PodTunnelName, "Name of the Geneve interface created inside pods")
 	flags.Uint16Var(&o.GenevePort, "geneve-port", o.GenevePort, "UDP port used for the Geneve overlay")

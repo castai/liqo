@@ -46,7 +46,7 @@ BPF_CFLAGS += -I$(KERNEL_HEADERS_COMMON)/arch/$(ARCH)/include
 BPF_CFLAGS += -I.
 BPF_CFLAGS += -Wall -Werror
 
-TARGETS := tc_pod_encap.o tc_gw_return.o
+TARGETS := tc_pod_encap.o tc_gw_return.o tc_gw_forward.o tc_geneve_rx.o
 
 .PHONY: all clean
 

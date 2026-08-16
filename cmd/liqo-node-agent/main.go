@@ -123,6 +123,7 @@ func run(cmd *cobra.Command, _ []string) error {
 		NodeName:       options.NodeName,
 		RouteMapPath:   options.RouteMapPath,
 		PodEncapObject: options.PodEncapObject,
+		GeneveRxObject: options.GeneveRxObject,
 		PodTunnelName:  options.PodTunnelName,
 		GenevePort:     options.GenevePort,
 		Injector:       nodeagent.NewInjector(),

@@ -25,6 +25,31 @@ struct {
 	__uint(map_flags, BPF_F_NO_PREALLOC);
 } liqo_routes_poc __section(".maps");
 
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(max_entries, 8);
+	__uint(key_size, sizeof(__u32));
+	__uint(value_size, sizeof(__u64));
+	__uint(pinning, LIBBPF_PIN_BY_NAME);
+} liqo_pod_encap_stats_poc __section(".maps");
+
+enum {
+	POD_STAT_ENTERED = 0,
+	POD_STAT_IPV4,
+	POD_STAT_LOOKUP_HIT,
+	POD_STAT_LOOKUP_MISS,
+	POD_STAT_TUNNEL_KEY_OK,
+	POD_STAT_REDIRECT,
+	POD_STAT_TRUNCATED,
+};
+
+static __always_inline void inc_pod_stat(__u32 idx)
+{
+	__u64 *counter = bpf_map_lookup_elem(&liqo_pod_encap_stats_poc, &idx);
+	if (counter)
+		*counter += 1;
+}
+
 SEC("classifier")
 int tc_pod_encap(struct __sk_buff *skb)
 {
@@ -36,30 +61,42 @@ int tc_pod_encap(struct __sk_buff *skb)
 	struct route_value *rv;
 	struct bpf_tunnel_key tkey;
 
+	inc_pod_stat(POD_STAT_ENTERED);
+
 	/* Basic sanity check: need at least an Ethernet header. */
 	eth = data;
-	if ((void *)(eth + 1) > data_end)
+	if ((void *)(eth + 1) > data_end) {
+		inc_pod_stat(POD_STAT_TRUNCATED);
 		return TC_ACT_OK;
+	}
 
 	/* We only handle IPv4 in this PoC. */
 	if (eth->h_proto != bpf_htons(ETH_P_IP))
 		return TC_ACT_OK;
 
 	ip = (struct iphdr *)((void *)eth + sizeof(*eth));
-	if ((void *)(ip + 1) > data_end)
+	if ((void *)(ip + 1) > data_end) {
+		inc_pod_stat(POD_STAT_TRUNCATED);
 		return TC_ACT_OK;
+	}
 
 	/* IPv4 only. */
 	if (ip->version != 4)
 		return TC_ACT_OK;
+
+	inc_pod_stat(POD_STAT_IPV4);
 
 	/* Look up the destination address in the shared LPM trie. */
 	key.prefixlen = 32;
 	key.addr = ip->daddr;
 
 	rv = bpf_map_lookup_elem(&liqo_routes_poc, &key);
-	if (!rv)
+	if (!rv) {
+		inc_pod_stat(POD_STAT_LOOKUP_MISS);
 		return TC_ACT_OK;
+	}
+
+	inc_pod_stat(POD_STAT_LOOKUP_HIT);
 
 	/*
 	 * Populate the tunnel metadata.  The Geneve interface in the pod netns
@@ -74,10 +111,13 @@ int tc_pod_encap(struct __sk_buff *skb)
 	if (bpf_skb_set_tunnel_key(skb, &tkey, sizeof(tkey), BPF_F_ZERO_CSUM_TX))
 		return TC_ACT_OK;
 
+	inc_pod_stat(POD_STAT_TUNNEL_KEY_OK);
+
 	/*
 	 * Redirect to the pod-local Geneve interface egress path so the kernel
 	 * performs Geneve encapsulation using the tunnel metadata set above.
 	 */
+	inc_pod_stat(POD_STAT_REDIRECT);
 	return bpf_redirect(target_ifindex, 0);
 }
 
