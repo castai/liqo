@@ -259,7 +259,10 @@ func (w *Waiter) ForGatewayServerStatusEndpoint(ctx context.Context, gwServer *n
 		if len(endpoints) == 0 && gwServer.Status.Endpoint != nil {
 			endpoints = []networkingv1beta1.EndpointStatus{*gwServer.Status.Endpoint}
 		}
-		if len(endpoints) < int(gwServer.Spec.Replicas) {
+		// Wait for the number of endpoints to exactly match the desired number of replicas.
+		// Using "==" instead of ">=" prevents liqoctl from using stale endpoints when scaling
+		// down the gateway, which would make the GatewayClient spec invalid.
+		if len(endpoints) != int(gwServer.Spec.Replicas) {
 			return false, nil
 		}
 		for i := range endpoints {

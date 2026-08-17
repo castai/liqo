@@ -59,6 +59,8 @@ func NewInternalFabricReconciler(cl client.Client, s *runtime.Scheme, routeConfi
 // +kubebuilder:rbac:groups=networking.liqo.io,resources=internalnodes,verbs=get;list;watch
 // +kubebuilder:rbac:groups=networking.liqo.io,resources=internalnodes/finalizers,verbs=update
 // +kubebuilder:rbac:groups=networking.liqo.io,resources=connections,verbs=get;list;watch
+// +kubebuilder:rbac:groups=networking.liqo.io,resources=firewallconfigurations,verbs=get;list;watch;delete;create;update;patch
+// +kubebuilder:rbac:groups=networking.liqo.io,resources=firewallconfigurations/finalizers,verbs=update
 
 // Reconcile manage InternalFabric lifecycle.
 func (r *InternalFabricReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -93,6 +95,12 @@ func (r *InternalFabricReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	if err := r.ensureRouteConfiguration(ctx, internalFabric); err != nil {
 		return ctrl.Result{}, fmt.Errorf("ensuring route configuration: %w", err)
+	}
+
+	// firewall configuration (ECMP connection tracking marks)
+
+	if err := r.ensureFirewallConfiguration(ctx, internalFabric); err != nil {
+		return ctrl.Result{}, fmt.Errorf("ensuring firewall configuration: %w", err)
 	}
 
 	// geneve tunnels

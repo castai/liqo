@@ -161,6 +161,8 @@ func RuleIsEqual(rule *networkingv1beta1.Rule, netlinkRule *netlink.Rule) bool {
 		if *rule.FwMark < 0 || int64(*rule.FwMark) > math.MaxUint32 || uint32(*rule.FwMark) != netlinkRule.Mark {
 			return false
 		}
+	} else if netlinkRule.Mark != 0 {
+		return false
 	}
 
 	if rule.Priority != nil && *rule.Priority != netlinkRule.Priority {
