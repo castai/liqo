@@ -21,15 +21,14 @@ import (
 	sync "sync"
 	time "time"
 
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	runtime "k8s.io/apimachinery/pkg/runtime"
-	schema "k8s.io/apimachinery/pkg/runtime/schema"
-	cache "k8s.io/client-go/tools/cache"
-
 	versioned "github.com/liqotech/liqo/pkg/client/clientset/versioned"
 	internalinterfaces "github.com/liqotech/liqo/pkg/client/informers/externalversions/internalinterfaces"
 	ipam "github.com/liqotech/liqo/pkg/client/informers/externalversions/ipam"
 	offloading "github.com/liqotech/liqo/pkg/client/informers/externalversions/offloading"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	runtime "k8s.io/apimachinery/pkg/runtime"
+	schema "k8s.io/apimachinery/pkg/runtime/schema"
+	cache "k8s.io/client-go/tools/cache"
 )
 
 // SharedInformerOption defines the functional option type for SharedInformerFactory.

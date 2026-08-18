@@ -17,14 +17,13 @@
 package scheme
 
 import (
+	ipamv1alpha1 "github.com/liqotech/liqo/apis/ipam/v1alpha1"
+	offloadingv1beta1 "github.com/liqotech/liqo/apis/offloading/v1beta1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	serializer "k8s.io/apimachinery/pkg/runtime/serializer"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-
-	ipamv1alpha1 "github.com/liqotech/liqo/apis/ipam/v1alpha1"
-	offloadingv1beta1 "github.com/liqotech/liqo/apis/offloading/v1beta1"
 )
 
 var Scheme = runtime.NewScheme()

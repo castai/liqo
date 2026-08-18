@@ -17,10 +17,9 @@
 package fake
 
 import (
-	gentype "k8s.io/client-go/gentype"
-
 	v1beta1 "github.com/liqotech/liqo/apis/offloading/v1beta1"
 	offloadingv1beta1 "github.com/liqotech/liqo/pkg/client/clientset/versioned/typed/offloading/v1beta1"
+	gentype "k8s.io/client-go/gentype"
 )
 
 // fakeShadowEndpointSlices implements ShadowEndpointSliceInterface

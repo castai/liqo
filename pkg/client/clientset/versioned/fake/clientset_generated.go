@@ -17,18 +17,17 @@
 package fake
 
 import (
+	clientset "github.com/liqotech/liqo/pkg/client/clientset/versioned"
+	ipamv1alpha1 "github.com/liqotech/liqo/pkg/client/clientset/versioned/typed/ipam/v1alpha1"
+	fakeipamv1alpha1 "github.com/liqotech/liqo/pkg/client/clientset/versioned/typed/ipam/v1alpha1/fake"
+	offloadingv1beta1 "github.com/liqotech/liqo/pkg/client/clientset/versioned/typed/offloading/v1beta1"
+	fakeoffloadingv1beta1 "github.com/liqotech/liqo/pkg/client/clientset/versioned/typed/offloading/v1beta1/fake"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/discovery"
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	"k8s.io/client-go/testing"
-
-	clientset "github.com/liqotech/liqo/pkg/client/clientset/versioned"
-	ipamv1alpha1 "github.com/liqotech/liqo/pkg/client/clientset/versioned/typed/ipam/v1alpha1"
-	fakeipamv1alpha1 "github.com/liqotech/liqo/pkg/client/clientset/versioned/typed/ipam/v1alpha1/fake"
-	offloadingv1beta1 "github.com/liqotech/liqo/pkg/client/clientset/versioned/typed/offloading/v1beta1"
-	fakeoffloadingv1beta1 "github.com/liqotech/liqo/pkg/client/clientset/versioned/typed/offloading/v1beta1/fake"
 )
 
 // NewSimpleClientset returns a clientset that will respond with the provided objects.

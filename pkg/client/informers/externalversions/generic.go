@@ -19,11 +19,10 @@ package externalversions
 import (
 	fmt "fmt"
 
-	schema "k8s.io/apimachinery/pkg/runtime/schema"
-	cache "k8s.io/client-go/tools/cache"
-
 	v1alpha1 "github.com/liqotech/liqo/apis/ipam/v1alpha1"
 	v1beta1 "github.com/liqotech/liqo/apis/offloading/v1beta1"
+	schema "k8s.io/apimachinery/pkg/runtime/schema"
+	cache "k8s.io/client-go/tools/cache"
 )
 
 // GenericInformer is type of SharedIndexInformer which will locate and delegate to other

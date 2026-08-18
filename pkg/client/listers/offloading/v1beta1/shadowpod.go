@@ -17,11 +17,10 @@
 package v1beta1
 
 import (
+	offloadingv1beta1 "github.com/liqotech/liqo/apis/offloading/v1beta1"
 	labels "k8s.io/apimachinery/pkg/labels"
 	listers "k8s.io/client-go/listers"
 	cache "k8s.io/client-go/tools/cache"
-
-	offloadingv1beta1 "github.com/liqotech/liqo/apis/offloading/v1beta1"
 )
 
 // ShadowPodLister helps list ShadowPods.

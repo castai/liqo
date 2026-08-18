@@ -19,10 +19,9 @@ package v1beta1
 import (
 	http "net/http"
 
-	rest "k8s.io/client-go/rest"
-
 	offloadingv1beta1 "github.com/liqotech/liqo/apis/offloading/v1beta1"
 	scheme "github.com/liqotech/liqo/pkg/client/clientset/versioned/scheme"
+	rest "k8s.io/client-go/rest"
 )
 
 type OffloadingV1beta1Interface interface {
