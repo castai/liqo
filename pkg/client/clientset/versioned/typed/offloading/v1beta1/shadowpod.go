@@ -19,12 +19,13 @@ package v1beta1
 import (
 	context "context"
 
-	offloadingv1beta1 "github.com/liqotech/liqo/apis/offloading/v1beta1"
-	scheme "github.com/liqotech/liqo/pkg/client/clientset/versioned/scheme"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	gentype "k8s.io/client-go/gentype"
+
+	offloadingv1beta1 "github.com/liqotech/liqo/apis/offloading/v1beta1"
+	scheme "github.com/liqotech/liqo/pkg/client/clientset/versioned/scheme"
 )
 
 // ShadowPodsGetter has a method to return a ShadowPodInterface.

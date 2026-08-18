@@ -19,12 +19,13 @@ package v1alpha1
 import (
 	context "context"
 
-	ipamv1alpha1 "github.com/liqotech/liqo/apis/ipam/v1alpha1"
-	scheme "github.com/liqotech/liqo/pkg/client/clientset/versioned/scheme"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	gentype "k8s.io/client-go/gentype"
+
+	ipamv1alpha1 "github.com/liqotech/liqo/apis/ipam/v1alpha1"
+	scheme "github.com/liqotech/liqo/pkg/client/clientset/versioned/scheme"
 )
 
 // IPsGetter has a method to return a IPInterface.

@@ -20,14 +20,15 @@ import (
 	context "context"
 	time "time"
 
-	apisipamv1alpha1 "github.com/liqotech/liqo/apis/ipam/v1alpha1"
-	versioned "github.com/liqotech/liqo/pkg/client/clientset/versioned"
-	internalinterfaces "github.com/liqotech/liqo/pkg/client/informers/externalversions/internalinterfaces"
-	ipamv1alpha1 "github.com/liqotech/liqo/pkg/client/listers/ipam/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
 	cache "k8s.io/client-go/tools/cache"
+
+	apisipamv1alpha1 "github.com/liqotech/liqo/apis/ipam/v1alpha1"
+	versioned "github.com/liqotech/liqo/pkg/client/clientset/versioned"
+	internalinterfaces "github.com/liqotech/liqo/pkg/client/informers/externalversions/internalinterfaces"
+	ipamv1alpha1 "github.com/liqotech/liqo/pkg/client/listers/ipam/v1alpha1"
 )
 
 // IPInformer provides access to a shared informer and lister for

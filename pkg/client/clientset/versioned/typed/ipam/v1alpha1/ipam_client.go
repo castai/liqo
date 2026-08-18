@@ -19,9 +19,10 @@ package v1alpha1
 import (
 	http "net/http"
 
+	rest "k8s.io/client-go/rest"
+
 	ipamv1alpha1 "github.com/liqotech/liqo/apis/ipam/v1alpha1"
 	scheme "github.com/liqotech/liqo/pkg/client/clientset/versioned/scheme"
-	rest "k8s.io/client-go/rest"
 )
 
 type IpamV1alpha1Interface interface {

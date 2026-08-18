@@ -17,9 +17,10 @@
 package fake
 
 import (
+	gentype "k8s.io/client-go/gentype"
+
 	v1alpha1 "github.com/liqotech/liqo/apis/ipam/v1alpha1"
 	ipamv1alpha1 "github.com/liqotech/liqo/pkg/client/clientset/versioned/typed/ipam/v1alpha1"
-	gentype "k8s.io/client-go/gentype"
 )
 
 // fakeIPs implements IPInterface

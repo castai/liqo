@@ -17,10 +17,11 @@
 package v1alpha1
 
 import (
-	ipamv1alpha1 "github.com/liqotech/liqo/apis/ipam/v1alpha1"
 	labels "k8s.io/apimachinery/pkg/labels"
 	listers "k8s.io/client-go/listers"
 	cache "k8s.io/client-go/tools/cache"
+
+	ipamv1alpha1 "github.com/liqotech/liqo/apis/ipam/v1alpha1"
 )
 
 // IPLister helps list IPs.
