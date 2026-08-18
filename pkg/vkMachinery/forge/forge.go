@@ -255,6 +255,8 @@ func forgeVKPodSpec(vkNamespace string, homeCluster liqov1beta1.ClusterID, liqoN
 		ServiceAccountName: VirtualKubeletServiceAccountName(virtualNode.Name),
 		ImagePullSecrets:   opts.Spec.ImagePullSecrets,
 		Tolerations:        opts.Spec.Tolerations,
+		Affinity:           opts.Spec.Affinity,
+		NodeSelector:       opts.Spec.NodeSelector,
 	}
 }
 
