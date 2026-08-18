@@ -335,7 +335,11 @@ jobs:
   release:
     runs-on: ubuntu-latest
     needs: [build-standard, build-go, configure, liqoctl]
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    if: >
+      github.event_name == 'push' && (
+        startsWith(github.ref, 'refs/tags/v') ||
+        github.ref == 'refs/heads/master'
+      )
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -347,6 +351,7 @@ jobs:
           persist-credentials: false
 
       - name: Get the latest Liqo release
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: pozetroninc/github-action-get-latest-release@v0.8.0
         id: last-release
         with:
@@ -364,6 +369,7 @@ jobs:
           version: v3.8.1
 
       - name: Parse semver string
+        if: startsWith(github.ref, 'refs/tags/v')
         id: semver_parser
         uses: booxmedialtd/ws-action-parse-semver@v1
         with:
@@ -374,10 +380,21 @@ jobs:
       # https://github.com/helm/chart-releaser-action/issues/60, and it is not possible to add the
       # release artifact to the main liqo release.
       - name: Download chart releaser
+        if: startsWith(github.ref, 'refs/tags/v')
         run: |
           curl -sSL "https://github.com/helm/chart-releaser/releases/download/v1.4.0/chart-releaser_1.4.0_linux_amd64.tar.gz" | tar -xz
 
-      - name: Update liqo-crds subchart appVersion
+      - name: Compute chart version
+        id: chart-version
+        run: |
+          if [ "${{ github.ref }}" == "refs/heads/master" ]; then
+            short_sha=$(git rev-parse --short HEAD)
+            echo "version=0.0.0-master.${short_sha}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${{ needs.configure.outputs.commit-ref }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Update chart image tag and subchart appVersion
         run: |
           # Install yq for YAML manipulation
           YQ_VERSION="v4.40.5"
@@ -388,21 +405,34 @@ jobs:
           yq eval ".appVersion = \"${{ needs.configure.outputs.commit-ref }}\"" \
             -i deployments/liqo/charts/liqo-crds/Chart.yaml
 
+          # For master builds, set the global image tag so the chart uses the -ci image repositories
+          if [ "${{ github.ref }}" == "refs/heads/master" ]; then
+            yq eval ".tag = \"${{ needs.configure.outputs.commit-ref }}\"" \
+              -i deployments/liqo/values.yaml
+          fi
+
           # Verify the change
           echo "Updated liqo-crds Chart.yaml appVersion:"
           yq eval '.appVersion' deployments/liqo/charts/liqo-crds/Chart.yaml
+          if [ "${{ github.ref }}" == "refs/heads/master" ]; then
+            echo "Updated liqo values.yaml tag:"
+            yq eval '.tag' deployments/liqo/values.yaml
+          fi
 
       - name: Package helm chart
         run: |
           # the output should be in the .cr-release-packages since cr index expects to find it there to create the helm index
-          helm package deployments/liqo --version "${{ needs.configure.outputs.commit-ref }}" --app-version "${{ needs.configure.outputs.commit-ref }}" --destination .cr-release-packages
+          helm package deployments/liqo --version "${{ steps.chart-version.outputs.version }}" --app-version "${{ needs.configure.outputs.commit-ref }}" --destination .cr-release-packages
 
-      - uses: actions/download-artifact@v4
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        if: startsWith(github.ref, 'refs/tags/v')
         with:
           path: ./liqoctl/
 
             # we need to upload only helm artifacts first, to make the index updater to work
       - uses: ncipollo/release-action@v1
+        if: startsWith(github.ref, 'refs/tags/v')
         with:
           artifacts: ".cr-release-packages/*"
           generateReleaseNotes: true
@@ -412,6 +442,7 @@ jobs:
           name: ${{ needs.configure.outputs.commit-ref }}
 
       - name: Update Helm index
+        if: startsWith(github.ref, 'refs/tags/v')
         run: |
           repo=$(cut -d '/' -f 2 <<< "$GITHUB_REPOSITORY")
           owner=$(cut -d '/' -f 1 <<< "$GITHUB_REPOSITORY")
@@ -427,9 +458,90 @@ jobs:
               --push
 
       - uses: ncipollo/release-action@v1
+        if: startsWith(github.ref, 'refs/tags/v')
         with:
           artifacts: "./liqoctl/**/*"
           token: ${{ secrets.GITHUB_TOKEN }}
           allowUpdates: true
           tag: ${{ needs.configure.outputs.commit-ref }}
           name: ${{ needs.configure.outputs.commit-ref }}
+
+      - name: Publish chart to GitHub Pages
+        if: github.ref == 'refs/heads/master'
+        run: |
+          # Use a credential helper instead of embedding the token in the remote URL
+          git config --global credential.helper 'cache --timeout=300'
+          git credential approve <<EOF
+          url=https://github.com
+          username=x-access-token
+          password=${{ secrets.GITHUB_TOKEN }}
+          EOF
+
+          # Ensure origin uses a token-free URL
+          git remote set-url origin "https://github.com/${{ github.repository }}.git"
+
+          # Fetch the GitHub Pages branch and create a temporary worktree
+          git fetch origin gh-pages
+          worktree_dir=$(mktemp -d)
+          git worktree add "$worktree_dir" origin/gh-pages
+
+          # Ensure the charts directory exists
+          mkdir -p "$worktree_dir/charts"
+
+          # Copy the packaged chart to the gh-pages worktree
+          chart=".cr-release-packages/liqo-${{ steps.chart-version.outputs.version }}.tgz"
+          cp "$chart" "$worktree_dir/charts/"
+
+          # Build the GitHub Pages URL dynamically from the repository name
+          owner=$(cut -d '/' -f1 <<< "$GITHUB_REPOSITORY")
+          repo=$(cut -d '/' -f2 <<< "$GITHUB_REPOSITORY")
+          pages_url="https://${owner}.github.io/${repo}/charts"
+
+          # Merge the existing index.yaml if it exists, otherwise generate a fresh one
+          pushd "$worktree_dir" >/dev/null
+          if [ -f index.yaml ]; then
+            helm repo index charts --url "$pages_url" --merge index.yaml
+          else
+            helm repo index charts --url "$pages_url"
+          fi
+          mv charts/index.yaml index.yaml
+          popd >/dev/null
+
+          # Commit and push the updated index and chart
+          pushd "$worktree_dir" >/dev/null
+          git config user.name "adamjensenbot"
+          git config user.email "adamjensenbot@users.noreply.github.com"
+          git add index.yaml charts/
+          git commit -m "Publish chart for master/${{ github.sha }}"
+          git push origin HEAD:gh-pages
+          popd >/dev/null
+
+          # Clean up the temporary worktree
+          git worktree remove "$worktree_dir"
+          rm -rf "$worktree_dir"
+
+      - name: Chart release info
+        run: |
+          cat <<EOF | tee -a "$GITHUB_STEP_SUMMARY"
+          ## Chart released 🚀
+
+          | Field | Value |
+          |-------|-------|
+          | Chart | liqo |
+          | Version | ${{ steps.chart-version.outputs.version }} |
+          | Ref | ${{ github.ref_name }} |
+          | Commit | ${{ github.sha }} |
+
+          ### Install
+
+          \`\`\`bash
+          helm repo add castai-liqo https://castai.github.io/liqo
+          helm install <release-name> castai-liqo/liqo --version ${{ steps.chart-version.outputs.version }}
+          \`\`\`
+
+          ### List all versions
+
+          \`\`\`bash
+          helm search repo castai-liqo/liqo --versions --devel
+          \`\`\`
+          EOF
