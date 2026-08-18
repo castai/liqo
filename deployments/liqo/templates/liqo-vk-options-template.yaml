@@ -46,7 +46,7 @@ spec:
   {{- end }}
   {{- include "liqo.imagePullSecrets" . | nindent 2 }}
   reflectorsConfig:
-    pod: 
+    pod:
       workers: {{ .Values.offloading.reflection.pod.workers }}
     service:
       workers: {{ .Values.offloading.reflection.service.workers }}
@@ -103,4 +103,8 @@ spec:
   {{- if .Values.virtualKubelet.extra.tolerations }}
   tolerations:
     {{- toYaml .Values.virtualKubelet.extra.tolerations | nindent 4 }}
+  {{- end }}
+  {{- if .Values.virtualKubelet.extra.affinity }}
+  affinity:
+    {{- toYaml .Values.virtualKubelet.extra.affinity | nindent 4 }}
   {{- end }}

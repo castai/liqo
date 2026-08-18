@@ -747,6 +747,7 @@ virtualKubelet:
       requests: {}
     # -- Tolerations for the virtual kubelet pod.
     tolerations: []
+    affinity: {}
   virtualNode:
     extra:
       # -- Extra annotations for the virtual node.
