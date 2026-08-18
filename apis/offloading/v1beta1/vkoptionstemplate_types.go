@@ -40,6 +40,7 @@ type VkOptionsTemplateSpec struct {
 	PullPolicy              corev1.PullPolicy             `json:"pullPolicy,omitempty"`
 	Tolerations             []corev1.Toleration           `json:"tolerations,omitempty"`
 	Affinity                *corev1.Affinity              `json:"affinity,omitempty"`
+	NodeSelector            map[string]string             `json:"nodeSelector,omitempty"`
 }
 
 // ReflectorConfig contains configuration parameters of the reflector.

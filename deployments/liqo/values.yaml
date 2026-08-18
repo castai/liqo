@@ -748,6 +748,7 @@ virtualKubelet:
     # -- Tolerations for the virtual kubelet pod.
     tolerations: []
     affinity: {}
+    nodeSelector: {}
   virtualNode:
     extra:
       # -- Extra annotations for the virtual node.

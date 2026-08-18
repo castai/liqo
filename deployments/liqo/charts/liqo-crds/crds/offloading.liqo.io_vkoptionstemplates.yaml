@@ -1017,6 +1017,10 @@ spec:
                 additionalProperties:
                   type: string
                 type: object
+              nodeSelector:
+                additionalProperties:
+                  type: string
+                type: object
               pullPolicy:
                 description: PullPolicy describes a policy for if/when to pull a container
                   image

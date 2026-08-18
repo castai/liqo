@@ -108,3 +108,7 @@ spec:
   affinity:
     {{- toYaml .Values.virtualKubelet.extra.affinity | nindent 4 }}
   {{- end }}
+  {{- if .Values.virtualKubelet.extra.nodeSelector }}
+  nodeSelector:
+    {{- toYaml .Values.virtualKubelet.extra.nodeSelector | nindent 4 }}
+  {{- end }}
