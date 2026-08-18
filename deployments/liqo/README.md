@@ -226,9 +226,11 @@
 | uninstaller.pod.extraArgs | list | `[]` | Extra arguments for the uninstaller pod. |
 | uninstaller.pod.labels | object | `{}` | Labels for the uninstaller pod. |
 | uninstaller.pod.resources | object | `{"limits":{},"requests":{}}` | Resource requests and limits (https://kubernetes.io/docs/user-guide/compute-resources/) for the uninstaller pod. |
+| virtualKubelet.extra.affinity | object | `{}` |  |
 | virtualKubelet.extra.annotations | object | `{}` | Annotations for the virtual kubelet pod. |
 | virtualKubelet.extra.args | list | `[]` | Extra arguments virtual kubelet pod. |
 | virtualKubelet.extra.labels | object | `{}` | Labels for the virtual kubelet pod. |
+| virtualKubelet.extra.nodeSelector | object | `{}` |  |
 | virtualKubelet.extra.resources | object | `{"limits":{},"requests":{}}` | Resource requests and limits (https://kubernetes.io/docs/user-guide/compute-resources/) for the virtual kubelet pod. |
 | virtualKubelet.extra.tolerations | list | `[]` | Tolerations for the virtual kubelet pod. |
 | virtualKubelet.image.name | string | `"us-docker.pkg.dev/castai-hub/library/liqo/virtual-kubelet"` | Image repository for the virtual kubelet pod. |
