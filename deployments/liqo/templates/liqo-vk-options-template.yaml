@@ -115,3 +115,11 @@ spec:
   tolerations:
     {{- toYaml .Values.virtualKubelet.extra.tolerations | nindent 4 }}
   {{- end }}
+  {{- if .Values.virtualKubelet.extra.affinity }}
+  affinity:
+    {{- toYaml .Values.virtualKubelet.extra.affinity | nindent 4 }}
+  {{- end }}
+  {{- if .Values.virtualKubelet.extra.nodeSelector }}
+  nodeSelector:
+    {{- toYaml .Values.virtualKubelet.extra.nodeSelector | nindent 4 }}
+  {{- end }}
