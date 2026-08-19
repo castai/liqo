@@ -121,38 +121,28 @@ func (r *RouteConfigurationReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 		return ctrl.Result{}, nil
 
-	case deleting && containsFinalizer && r.EnableFinalizer:
-		existingRules, err := GetRulesByTableID(tableID)
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("listing existing rules: %w", err)
+	case deleting:
+		// Flush all rules and routes in the table, then remove the table entry.
+		// Each RouteConfiguration owns a unique table ID (derived from Spec.Table.Name),
+		// so flushing is safe — no other RouteConfiguration uses this table.
+		if err = FlushRulesByTableID(tableID); err != nil {
+			return ctrl.Result{}, fmt.Errorf("flushing rules: %w", err)
 		}
-		existingRoutes, err := GetRoutesByTableID(tableID)
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("listing existing routes: %w", err)
+		if err = FlushRoutesByTableID(tableID); err != nil {
+			return ctrl.Result{}, fmt.Errorf("flushing routes: %w", err)
 		}
-
-		for i := range routeconfiguration.Spec.Table.Rules {
-			if err = EnsureRuleAbsence(&routeconfiguration.Spec.Table.Rules[i], existingRules); err != nil {
-				return ctrl.Result{}, fmt.Errorf("ensuring rule absence: %w", err)
-			}
-			if err = EnsureRoutesAbsence(routeconfiguration.Spec.Table.Rules[i].Routes, existingRoutes); err != nil {
-				return ctrl.Result{}, fmt.Errorf("ensuring routes absence: %w", err)
-			}
-		}
-
 		if err = EnsureTableAbsence(tableID); err != nil {
 			return ctrl.Result{}, fmt.Errorf("ensuring table absence: %w", err)
 		}
 
-		if err = r.ensureRouteConfigurationFinalizerAbsence(ctx, routeconfiguration); err != nil {
-			return ctrl.Result{}, fmt.Errorf("removing finalizer: %w", err)
+		if containsFinalizer && r.EnableFinalizer {
+			if err = r.ensureRouteConfigurationFinalizerAbsence(ctx, routeconfiguration); err != nil {
+				return ctrl.Result{}, fmt.Errorf("removing finalizer: %w", err)
+			}
 		}
 
 		klog.V(2).Infof("RouteConfiguration %s deleted", req.String())
 
-		return ctrl.Result{}, nil
-
-	case deleting && !containsFinalizer:
 		return ctrl.Result{}, nil
 	}
 
