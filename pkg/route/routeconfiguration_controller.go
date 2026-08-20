@@ -241,7 +241,7 @@ func (r *RouteConfigurationReconciler) flushStaleRules(name string) {
 		return
 	}
 
-	klog.V(2).Infof("Flushing stale rules for table %s", tableID)
+	klog.V(2).Infof("Flushing stale rules for table %d", tableID)
 
 	if err := FlushRulesByTableID(tableID); err != nil {
 		klog.Warningf("optimistic cleanup: failed to flush rules for table %d (name %q): %v", tableID, tableName, err)
