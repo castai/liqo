@@ -74,6 +74,8 @@ func InitFlags(flagset *pflag.FlagSet, opts *Options) {
 		"Enable the gateway masquerade bypass")
 	flagset.BoolVar(&opts.GatewayTemplateWatchEnabled, "gateway-template-watch-enabled", true,
 		"Enable watching of custom GatewayTemplate CRDs")
+	flagset.BoolVar(&opts.EnableNodePortRouting, "enable-node-port-routing", true,
+		"Enable NodePort routing (creates service-nodeport-routing RouteConfigurations and FirewallConfigurations per node)")
 	flagset.IntVar(&opts.NetworkWorkers, "network-ctrl-workers", 1,
 		"The number of workers used to reconcile Network resources.")
 	flagset.IntVar(&opts.IPWorkers, "ip-ctrl-workers", 1,

@@ -18,4 +18,7 @@ package route
 type Options struct {
 	Namespace                      string
 	RouteConfigurationRulePriority int
+	// EnableNodePortRouting controls whether NodePort routing RouteConfigurations
+	// and FirewallConfigurations are created for each InternalNode.
+	EnableNodePortRouting bool
 }

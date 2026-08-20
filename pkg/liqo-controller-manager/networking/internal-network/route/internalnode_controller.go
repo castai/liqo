@@ -112,16 +112,6 @@ func (r *InternalNodeReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		}
 	}
 
-	extCIDR, err := ipam.GetExternalCIDR(ctx, r.Client, corev1.NamespaceAll)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-
-	unknownSourceIP, err := ipam.GetUnknownSourceIP(extCIDR)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-
 	configurations, err := getters.ListConfigurationsByLabel(ctx, r.Client, labels.Everything())
 	if err != nil {
 		return ctrl.Result{}, err
@@ -133,10 +123,22 @@ func (r *InternalNodeReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, err
 	}
 
-	mark := AssignMark(internalnode.GetName())
+	if r.Options.EnableNodePortRouting {
+		extCIDR, err := ipam.GetExternalCIDR(ctx, r.Client, corev1.NamespaceAll)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
 
-	if err = enforceRouteWithConntrackPresence(ctx, r.Client, internalnode, r.Scheme, mark, unknownSourceIP, r.Options); err != nil {
-		return ctrl.Result{}, err
+		unknownSourceIP, err := ipam.GetUnknownSourceIP(extCIDR)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+
+		mark := AssignMark(internalnode.GetName())
+
+		if err = enforceRouteWithConntrackPresence(ctx, r.Client, internalnode, r.Scheme, mark, unknownSourceIP, r.Options); err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 
 	if err := enforceRouteConfigurationExtCIDR(ctx, r.Client, internalnode, configurations.Items, ips.Items, r.Scheme, r.Options); err != nil {

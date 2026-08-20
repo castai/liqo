@@ -67,6 +67,7 @@ type NetworkingOption struct {
 	FabricFullMasquerade           bool
 	GwmasqbypassEnabled            bool
 	GatewayTemplateWatchEnabled    bool
+	EnableNodePortRouting          bool
 
 	GenevePort                     uint16
 	RouteConfigurationRulePriority int
@@ -91,6 +92,7 @@ func NewNetworkingOption(factory *dynamicutils.RunnableFactory, dynClient dynami
 		FabricFullMasquerade:           opts.FabricFullMasqueradeEnabled,
 		GwmasqbypassEnabled:            opts.GwmasqbypassEnabled,
 		GatewayTemplateWatchEnabled:    opts.GatewayTemplateWatchEnabled,
+		EnableNodePortRouting:          opts.EnableNodePortRouting,
 
 		GenevePort:                     opts.GenevePort,
 		RouteConfigurationRulePriority: opts.RouteConfigurationRulePriority,
@@ -236,7 +238,8 @@ func SetupNetworkingModule(ctx context.Context, mgr manager.Manager, uncachedCli
 		mgr.GetScheme(),
 		mgr.GetEventRecorderFor("internal-node-controller"),
 		&route.Options{
-			Namespace: opts.LiqoNamespace,
+			Namespace:             opts.LiqoNamespace,
+			EnableNodePortRouting: opts.EnableNodePortRouting,
 		},
 	)
 	if err := internalNodeReconciler.SetupWithManager(mgr); err != nil {
