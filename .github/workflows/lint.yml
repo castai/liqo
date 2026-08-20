@@ -44,11 +44,11 @@ jobs:
         with:
           go-version-file: go.mod
 
-    - name: Execute go mod tidy and check the outcome
-      working-directory: ./
-      run: |
-        go mod tidy
-        git diff --exit-code
+      - name: Execute go mod tidy and check the outcome
+        working-directory: ./
+        run: |
+          go mod tidy
+          git diff --exit-code
 
       - name: Issue a comment in case the of failure
         uses: peter-evans/create-or-update-comment@v4
