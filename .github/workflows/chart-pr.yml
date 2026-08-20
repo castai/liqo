@@ -1,4 +1,4 @@
-name: Chart
+name: Chart PR release
 
 on:
   workflow_dispatch:
@@ -175,6 +175,10 @@ jobs:
 
           # Point all Liqo images to this PR's CI build.
           sed -i "s/^tag:.*/tag: \"${IMAGE_TAG}\"/" deployments/liqo/values.yaml
+
+          # Update the liqo-crds subchart's appVersion so the CRD upgrade job
+          # image resolves to the correct CI build.
+          sed -i "s/^appVersion:.*/appVersion: \"${IMAGE_TAG}\"/" deployments/liqo/charts/liqo-crds/Chart.yaml
 
           # Build the file:// subchart dependency (liqo-crds) before packaging.
           helm dependency build deployments/liqo
