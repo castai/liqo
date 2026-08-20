@@ -119,6 +119,20 @@ func GetRoutesByTableID(tableID uint32) ([]netlink.Route, error) {
 	}, netlink.RT_FILTER_TABLE)
 }
 
+// FlushRoutesByTableID deletes all routes in the given table ID.
+func FlushRoutesByTableID(tableID uint32) error {
+	routes, err := GetRoutesByTableID(tableID)
+	if err != nil {
+		return fmt.Errorf("listing routes for table %d: %w", tableID, err)
+	}
+	for i := range routes {
+		if err := netlink.RouteDel(&routes[i]); err != nil {
+			return fmt.Errorf("deleting route %v: %w", routes[i], err)
+		}
+	}
+	return nil
+}
+
 // IsEqualRoute checks if the two routes are equal.
 func IsEqualRoute(route1, route2 *netlink.Route) bool {
 	if route1.Dst != nil && route2.Dst != nil && route1.Dst.String() != route2.Dst.String() {
