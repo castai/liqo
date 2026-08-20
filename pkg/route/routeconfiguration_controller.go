@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/vishvananda/netlink"
@@ -93,6 +94,7 @@ func (r *RouteConfigurationReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if err = r.Get(ctx, req.NamespacedName, routeconfiguration); err != nil {
 		if apierrors.IsNotFound(err) {
 			klog.V(6).Infof("There is no routeconfiguration %s", req.String())
+			r.flushStaleRules(req.Name)
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, fmt.Errorf("getting routeconfiguration: %w", err)
@@ -121,38 +123,28 @@ func (r *RouteConfigurationReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 		return ctrl.Result{}, nil
 
-	case deleting && containsFinalizer && r.EnableFinalizer:
-		existingRules, err := GetRulesByTableID(tableID)
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("listing existing rules: %w", err)
+	case deleting:
+		// Flush all rules and routes in the table, then remove the table entry.
+		// Each RouteConfiguration owns a unique table ID (derived from Spec.Table.Name),
+		// so flushing is safe — no other RouteConfiguration uses this table.
+		if err = FlushRulesByTableID(tableID); err != nil {
+			return ctrl.Result{}, fmt.Errorf("flushing rules: %w", err)
 		}
-		existingRoutes, err := GetRoutesByTableID(tableID)
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("listing existing routes: %w", err)
+		if err = FlushRoutesByTableID(tableID); err != nil {
+			return ctrl.Result{}, fmt.Errorf("flushing routes: %w", err)
 		}
-
-		for i := range routeconfiguration.Spec.Table.Rules {
-			if err = EnsureRuleAbsence(&routeconfiguration.Spec.Table.Rules[i], existingRules); err != nil {
-				return ctrl.Result{}, fmt.Errorf("ensuring rule absence: %w", err)
-			}
-			if err = EnsureRoutesAbsence(routeconfiguration.Spec.Table.Rules[i].Routes, existingRoutes); err != nil {
-				return ctrl.Result{}, fmt.Errorf("ensuring routes absence: %w", err)
-			}
-		}
-
 		if err = EnsureTableAbsence(tableID); err != nil {
 			return ctrl.Result{}, fmt.Errorf("ensuring table absence: %w", err)
 		}
 
-		if err = r.ensureRouteConfigurationFinalizerAbsence(ctx, routeconfiguration); err != nil {
-			return ctrl.Result{}, fmt.Errorf("removing finalizer: %w", err)
+		if containsFinalizer && r.EnableFinalizer {
+			if err = r.ensureRouteConfigurationFinalizerAbsence(ctx, routeconfiguration); err != nil {
+				return ctrl.Result{}, fmt.Errorf("removing finalizer: %w", err)
+			}
 		}
 
 		klog.V(2).Infof("RouteConfiguration %s deleted", req.String())
 
-		return ctrl.Result{}, nil
-
-	case deleting && !containsFinalizer:
 		return ctrl.Result{}, nil
 	}
 
@@ -234,6 +226,32 @@ func (r *RouteConfigurationReconciler) SetupWithManager(ctx context.Context, mgr
 			ReconciliationTimeout: reconcileTimeout,
 		}).
 		Complete(r)
+}
+
+// flushStaleRules attempts to flush kernel state when a RouteConfiguration is not found.
+// This handles the edge case where the object was deleted before the reconciler could run
+// The table name is inferred from the object name by stripping known suffixes.
+func (r *RouteConfigurationReconciler) flushStaleRules(name string) {
+	tableName := name
+	tableName = strings.TrimSuffix(tableName, "-gw-node")
+	tableName = strings.TrimSuffix(tableName, "-gw-ext")
+
+	tableID, err := GetTableID(tableName)
+	if err != nil {
+		return
+	}
+
+	klog.V(2).Infof("Flushing stale rules for table %s", tableID)
+
+	if err := FlushRulesByTableID(tableID); err != nil {
+		klog.Warningf("optimistic cleanup: failed to flush rules for table %d (name %q): %v", tableID, tableName, err)
+	}
+	if err := FlushRoutesByTableID(tableID); err != nil {
+		klog.Warningf("optimistic cleanup: failed to flush routes for table %d (name %q): %v", tableID, tableName, err)
+	}
+	if err := EnsureTableAbsence(tableID); err != nil {
+		klog.Warningf("optimistic cleanup: failed to remove table %d (name %q): %v", tableID, tableName, err)
+	}
 }
 
 func getConditionRef(rcfg *networkingv1beta1.RouteConfiguration, podname string) *networkingv1beta1.RouteConfigurationStatusCondition {
