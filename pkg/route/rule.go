@@ -113,6 +113,20 @@ func GetRulesByTableID(tableID uint32) ([]netlink.Rule, error) {
 	return rules, nil
 }
 
+// FlushRulesByTableID deletes all policy routing rules associated with the given table ID.
+func FlushRulesByTableID(tableID uint32) error {
+	rules, err := GetRulesByTableID(tableID)
+	if err != nil {
+		return fmt.Errorf("listing rules for table %d: %w", tableID, err)
+	}
+	for i := range rules {
+		if err := netlink.RuleDel(&rules[i]); err != nil {
+			return fmt.Errorf("deleting rule %v: %w", rules[i], err)
+		}
+	}
+	return nil
+}
+
 // ExistsRule checks if the given rule is already present in the rules list.
 func ExistsRule(rule *networkingv1beta1.Rule, rules []netlink.Rule) (*netlink.Rule, bool, error) {
 	for i := range rules {
