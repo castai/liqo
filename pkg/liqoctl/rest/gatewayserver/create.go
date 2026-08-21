@@ -83,6 +83,8 @@ func (o *Options) Create(ctx context.Context, options *rest.CreateOptions) *cobr
 		"Force the NodePort of the Gateway Server. Leave empty to let Kubernetes allocate a random NodePort")
 	cmd.Flags().StringVar(&o.LoadBalancerIP, "load-balancer-ip", "",
 		"Force LoadBalancer IP of the Gateway Server. Leave empty to use the one provided by the LoadBalancer provider")
+	cmd.Flags().Int32Var(&o.Replicas, "gw-replicas", 1,
+		"Number of gateway deployments to create, each with 1 replica")
 	cmd.Flags().BoolVar(&o.Wait, "wait", false, "Wait for the Gateway Server to be ready")
 
 	runtime.Must(cmd.MarkFlagRequired("remote-cluster-id"))
@@ -133,7 +135,7 @@ func (o *Options) handleCreate(ctx context.Context) error {
 				return false, err
 			}
 
-			return appliedGwServer.Status.Endpoint != nil && appliedGwServer.Status.ServerRef != nil, nil
+			return gatewayServerEndpointsReady(&appliedGwServer), nil
 		}); err != nil {
 			s.Fail("Unable to wait for gatewayserver to be ready: %v", output.PrettyErr(err))
 			return err
@@ -164,4 +166,32 @@ func (o *Options) output(gwServer *networkingv1beta1.GatewayServer) error {
 	}
 
 	return printer.PrintObj(gwServer, os.Stdout)
+}
+
+// gatewayServerEndpointsReady reports whether all expected replica endpoints are present and ready.
+func gatewayServerEndpointsReady(gwServer *networkingv1beta1.GatewayServer) bool {
+	if gwServer.Status.ServerRef == nil {
+		return false
+	}
+
+	if len(gwServer.Status.Endpoints) != int(gwServer.Spec.Replicas) {
+		return false
+	}
+
+	for i := range gwServer.Status.Endpoints {
+		if !endpointStatusReady(&gwServer.Status.Endpoints[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+// endpointStatusReady reports whether the endpoint status has at least one address and one port.
+func endpointStatusReady(endpoint *networkingv1beta1.EndpointStatus) bool {
+	if endpoint == nil || len(endpoint.Addresses) == 0 {
+		return false
+	}
+	hasPort := endpoint.Port != 0
+	hasPorts := len(endpoint.Ports) > 0
+	return hasPort || hasPorts
 }

@@ -106,7 +106,11 @@ func (r *ServerReconciler) ensureInternalFabric(ctx context.Context, gwServer *n
 	if configuration.Status.Remote == nil {
 		return fmt.Errorf("remote configuration not found for the gateway server %q", gwServer.Name)
 	}
-	if gwServer.Status.InternalEndpoint == nil || gwServer.Status.InternalEndpoint.IP == nil {
+	endpoints := gwServer.Status.InternalEndpoints
+	if len(endpoints) == 0 && gwServer.Status.InternalEndpoint != nil {
+		endpoints = []networkingv1beta1.InternalGatewayEndpoint{*gwServer.Status.InternalEndpoint}
+	}
+	if len(endpoints) == 0 {
 		return fmt.Errorf("internal endpoint not found for the gateway server %q", gwServer.Name)
 	}
 
@@ -130,17 +134,10 @@ func (r *ServerReconciler) ensureInternalFabric(ctx context.Context, gwServer *n
 
 		internalFabric.Spec.MTU = gwServer.Spec.MTU
 
-		internalFabric.Spec.GatewayIP = *gwServer.Status.InternalEndpoint.IP
-
-		if internalFabric.Spec.Interface.Node.Name, err = internalnetwork.FindFreeInterfaceName(ctx, r.Client, internalFabric); err != nil {
-			return err
-		}
-
-		ip, err := ipam.Allocate(internalFabric.GetName())
+		internalFabric.Spec.Replicas, err = internalnetwork.BuildInternalFabricReplicas(ctx, r.Client, internalFabric, endpoints, ipam)
 		if err != nil {
 			return err
 		}
-		internalFabric.Spec.Interface.Gateway.IP = networkingv1beta1.IP(ip.String())
 
 		internalFabric.Spec.RemoteCIDRs = slices.Concat(
 			configuration.Status.Remote.CIDR.Pod,

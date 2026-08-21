@@ -42,12 +42,12 @@ import (
 	sourcedetector "github.com/liqotech/liqo/pkg/fabric/source-detector"
 	"github.com/liqotech/liqo/pkg/firewall"
 	"github.com/liqotech/liqo/pkg/gateway"
-	"github.com/liqotech/liqo/pkg/gateway/concurrent"
 	"github.com/liqotech/liqo/pkg/gateway/tunnel"
 	"github.com/liqotech/liqo/pkg/liqo-controller-manager/networking/external-network/remapping"
 	"github.com/liqotech/liqo/pkg/route"
 	argsutils "github.com/liqotech/liqo/pkg/utils/args"
 	flagsutils "github.com/liqotech/liqo/pkg/utils/flags"
+	"github.com/liqotech/liqo/pkg/utils/kernel"
 	kernelversion "github.com/liqotech/liqo/pkg/utils/kernel/version"
 	"github.com/liqotech/liqo/pkg/utils/mapper"
 	"github.com/liqotech/liqo/pkg/utils/resource"
@@ -102,6 +102,13 @@ func run(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
+	// Enable Multipath Hash Policy if required.
+	if options.EnableMultipathHashPolicy {
+		if err = kernel.EnableMultipathHashPolicy(); err != nil {
+			return fmt.Errorf("failed to enable multipath hash policy: %w", err)
+		}
+	}
+
 	// Set controller-runtime logger.
 	log.SetLogger(klog.NewKlogr())
 
@@ -119,12 +126,6 @@ func run(cmd *cobra.Command, _ []string) error {
 		[]string{gateway.GatewayComponentGateway},
 	)
 	utilruntime.Must(err)
-	reqActiveGatewayPods, err := labels.NewRequirement(
-		concurrent.ActiveGatewayKey,
-		selection.Equals,
-		[]string{concurrent.ActiveGatewayValue},
-	)
-	utilruntime.Must(err)
 
 	// Create the manager.
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
@@ -138,7 +139,7 @@ func run(cmd *cobra.Command, _ []string) error {
 		NewCache: func(config *rest.Config, opts cache.Options) (cache.Cache, error) {
 			opts.ByObject = map[client.Object]cache.ByObject{
 				&corev1.Pod{}: {
-					Label: labels.NewSelector().Add(*reqGatewayPods).Add(*reqActiveGatewayPods),
+					Label: labels.NewSelector().Add(*reqGatewayPods),
 				},
 			}
 			return cache.New(config, opts)

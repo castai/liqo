@@ -12,24 +12,13 @@ rules:
   - update
   - watch
 - apiGroups:
-  - ""
+  - apps
   resources:
-  - pods
+  - deployments
   verbs:
   - get
   - list
-  - patch
-  - update
   - watch
-- apiGroups:
-  - coordination.k8s.io
-  resources:
-  - leases
-  verbs:
-  - create
-  - delete
-  - get
-  - update
 - apiGroups:
   - networking.liqo.io
   resources:

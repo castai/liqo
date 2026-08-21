@@ -381,11 +381,13 @@ func endpointHasChanged(endpoint *networkingv1beta1.Endpoint, service *corev1.Se
 		return true
 	}
 	if len(service.Spec.Ports) > 0 {
-		if endpoint.Port != service.Spec.Ports[0].Port {
+		endpointPort := firstEndpointPort(endpoint)
+		if endpointPort != service.Spec.Ports[0].Port {
 			return true
 		}
 
-		if endpoint.NodePort != nil && *endpoint.NodePort != service.Spec.Ports[0].NodePort {
+		endpointNodePort := firstEndpointNodePort(endpoint)
+		if endpointNodePort != 0 && endpointNodePort != service.Spec.Ports[0].NodePort {
 			return true
 		}
 	}
@@ -394,6 +396,25 @@ func endpointHasChanged(endpoint *networkingv1beta1.Endpoint, service *corev1.Se
 		return true
 	}
 	return false
+}
+
+// firstEndpointPort returns the first port from the endpoint, preferring Ports over the deprecated Port.
+func firstEndpointPort(endpoint *networkingv1beta1.Endpoint) int32 {
+	if len(endpoint.Ports) > 0 {
+		return endpoint.Ports[0]
+	}
+	return endpoint.Port
+}
+
+// firstEndpointNodePort returns the first node port from the endpoint, preferring NodePorts over the deprecated NodePort.
+func firstEndpointNodePort(endpoint *networkingv1beta1.Endpoint) int32 {
+	if len(endpoint.NodePorts) > 0 {
+		return endpoint.NodePorts[0]
+	}
+	if endpoint.NodePort != nil {
+		return *endpoint.NodePort
+	}
+	return 0
 }
 
 // EnsureGatewayServer create or updates a GatewayServer.

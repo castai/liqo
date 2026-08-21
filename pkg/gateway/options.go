@@ -28,20 +28,13 @@ type Options struct {
 	RemoteClusterID string
 	NodeName        string
 	PodName         string
-	ContainerName   string
 
 	GatewayUID string
+	ReplicaID  int32
 
 	Mode Mode
 
-	ConcurrentContainersNames []string
-
 	ReconcileTimeout time.Duration
-
-	LeaderElection              bool
-	LeaderElectionLeaseDuration time.Duration
-	LeaderElectionRenewDeadline time.Duration
-	LeaderElectionRetryPeriod   time.Duration
 
 	MetricsAddress string
 	ProbeAddr      string

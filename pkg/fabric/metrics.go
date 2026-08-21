@@ -27,6 +27,7 @@ import (
 	"github.com/liqotech/liqo/pkg/conncheck"
 	"github.com/liqotech/liqo/pkg/consts"
 	"github.com/liqotech/liqo/pkg/gateway/tunnel"
+	internalnetwork "github.com/liqotech/liqo/pkg/liqo-controller-manager/networking/internal-network"
 	geneveutils "github.com/liqotech/liqo/pkg/utils/network/geneve"
 )
 
@@ -84,7 +85,20 @@ func (c *GeneveTrafficCollector) collectTraffic(ctx context.Context, gt *network
 		return
 	}
 
-	interfaceName := internalfabric.Spec.Interface.Node.Name
+	replicaID, err := replicaIDFromTunnel(gt)
+	if err != nil {
+		ch <- prometheus.NewInvalidMetric(tunnel.MetricsGeneveReceivedBytes, err)
+		ch <- prometheus.NewInvalidMetric(tunnel.MetricsGeneveTransmittedBytes, err)
+		return
+	}
+	replica := internalnetwork.GetInternalFabricReplica(internalfabric, replicaID)
+	if replica == nil {
+		ch <- prometheus.NewInvalidMetric(tunnel.MetricsGeneveReceivedBytes, fmt.Errorf("replica %d not found", replicaID))
+		ch <- prometheus.NewInvalidMetric(tunnel.MetricsGeneveTransmittedBytes, fmt.Errorf("replica %d not found", replicaID))
+		return
+	}
+
+	interfaceName := replica.Interface.Node.Name
 	stats, err := geneveutils.GetGeneveInterfaceStatistics(interfaceName)
 	if err != nil {
 		ch <- prometheus.NewInvalidMetric(tunnel.MetricsGeneveReceivedBytes, err)

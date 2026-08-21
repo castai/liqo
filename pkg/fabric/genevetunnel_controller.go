@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -42,6 +43,7 @@ import (
 	networkingv1beta1 "github.com/liqotech/liqo/apis/networking/v1beta1"
 	"github.com/liqotech/liqo/pkg/conncheck"
 	"github.com/liqotech/liqo/pkg/consts"
+	internalnetwork "github.com/liqotech/liqo/pkg/liqo-controller-manager/networking/internal-network"
 	"github.com/liqotech/liqo/pkg/utils/getters"
 	"github.com/liqotech/liqo/pkg/utils/network/geneve"
 	timeutils "github.com/liqotech/liqo/pkg/utils/time"
@@ -140,6 +142,19 @@ func (r *GeneveTunnelReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			gt.Spec.InternalFabricRef.Namespace, gt.Spec.InternalFabricRef.Name, err)
 	}
 
+	replicaID, err := replicaIDFromTunnel(gt)
+	if err != nil {
+		klog.Warningf("Unable to get replica ID for genevetunnel %s: %v", req, err)
+		return ctrl.Result{}, nil
+	}
+
+	replica := internalnetwork.GetInternalFabricReplica(&internalfabric, replicaID)
+	if replica == nil {
+		klog.Warningf("No replica %d found for internalfabric %s/%s", replicaID,
+			internalfabric.Namespace, internalfabric.Name)
+		return ctrl.Result{}, nil
+	}
+
 	// InternalFabric is being deleted: clean up the geneve interface now.
 	// GeneveTunnel has no finalizer, so once the InternalFabric controller deletes the tunnel objects,
 	// the geneveTunnel will be deleted immediately and we cannot delete the Geneve interface.
@@ -149,11 +164,11 @@ func (r *GeneveTunnelReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	// cleanup its finalizer. For a more consistent outcome, we rely on the geneve deletion routine.
 	if !internalfabric.DeletionTimestamp.IsZero() {
 		r.stopSender(gt.Name)
-		if err := geneve.EnsureGeneveInterfaceAbsence(internalfabric.Spec.Interface.Node.Name); err != nil {
+		if err := geneve.EnsureGeneveInterfaceAbsence(replica.Interface.Node.Name); err != nil {
 			klog.Warningf("Unable to delete geneve interface for genevetunnel %s: %v", req, err)
 			return ctrl.Result{}, nil
 		}
-		klog.Infof("deleted geneve interface %s for genevetunnel %s", internalfabric.Spec.Interface.Node.Name, req)
+		klog.Infof("deleted geneve interface %s for genevetunnel %s", replica.Interface.Node.Name, req)
 		return ctrl.Result{}, nil
 	}
 
@@ -163,9 +178,9 @@ func (r *GeneveTunnelReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 
 	if err := geneve.EnsureGeneveInterfacePresence(
-		internalfabric.Spec.Interface.Node.Name,
+		replica.Interface.Node.Name,
 		internalnode.Spec.Interface.Node.IP.String(),
-		internalfabric.Spec.GatewayIP.String(),
+		replica.GatewayIP.String(),
 		gt.Spec.ID,
 		r.Options.DisableARP,
 		internalfabric.Spec.MTU,
@@ -174,7 +189,7 @@ func (r *GeneveTunnelReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, fmt.Errorf("ensuring the geneve interface presence: %w", err)
 	}
 
-	klog.Infof("Enforced interface %s for genevetunnel %s", internalfabric.Spec.Interface.Node.Name, req.String())
+	klog.Infof("Enforced interface %s for genevetunnel %s", replica.Interface.Node.Name, req.String())
 
 	if r.Options.ConnCheckOptions.PingEnabled {
 		bindIP := r.Options.ConnCheckOptions.PingBindIP
@@ -312,6 +327,18 @@ func (r *GeneveTunnelReconciler) internalFabricEnqueuer(ctx context.Context, obj
 	}
 
 	return geneveTunnelListToRequests(list)
+}
+
+func replicaIDFromTunnel(tunnel *networkingv1beta1.GeneveTunnel) (int32, error) {
+	idStr, ok := tunnel.Labels[consts.GatewayReplicaID]
+	if !ok {
+		return 0, fmt.Errorf("missing replica label")
+	}
+	id, err := strconv.ParseInt(idStr, 10, 32)
+	if err != nil {
+		return 0, fmt.Errorf("invalid replica label %q: %w", idStr, err)
+	}
+	return int32(id), nil
 }
 
 func geneveTunnelListToRequests(list *networkingv1beta1.GeneveTunnelList) []reconcile.Request {

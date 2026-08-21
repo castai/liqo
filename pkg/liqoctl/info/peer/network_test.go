@@ -122,8 +122,9 @@ var _ = Describe("NetworkChecker tests", func() {
 
 				// Check gateway parameters
 				Expect(data.Gateway.Role).To(Equal(GatewayServerType), "Unexpected Gateway type")
-				Expect(data.Gateway.Address).To(Equal(gatewayRes.Spec.Endpoint.Addresses), "Unexpected gateway addresses")
-				Expect(data.Gateway.Port).To(Equal(gatewayRes.Spec.Endpoint.Port), "Unexpected gateway addresses")
+				Expect(len(gatewayRes.Spec.Endpoints)).To(BeNumerically(">", 0))
+				Expect(data.Gateway.Address).To(Equal(gatewayRes.Spec.Endpoints[0].Addresses), "Unexpected gateway addresses")
+				Expect(data.Gateway.Port).To(Equal(firstPort(&gatewayRes.Spec.Endpoints[0])), "Unexpected gateway port")
 			})
 
 			It("should preserve multiple remote and remapped CIDRs", func() {
@@ -204,13 +205,16 @@ var _ = Describe("NetworkChecker tests", func() {
 				var endpoint networkingv1beta1.EndpointStatus
 				if gatewayType == GatewayServerType {
 					gateway, _ := objects[0].(*networkingv1beta1.GatewayClient)
-					endpoint = gateway.Spec.Endpoint
+					Expect(len(gateway.Spec.Endpoints)).To(BeNumerically(">", 0))
+					endpoint = gateway.Spec.Endpoints[0]
 				} else {
 					gateway, _ := objects[0].(*networkingv1beta1.GatewayServer)
-					endpoint = *gateway.Status.Endpoint
+					ep := firstEndpoint(gateway)
+					Expect(ep).NotTo(BeNil())
+					endpoint = *ep
 				}
 				Expect(endpoint.Addresses).To(Equal(peerNetwork.Gateway.Address), "Unexpected gateway address")
-				Expect(endpoint.Port).To(Equal(peerNetwork.Gateway.Port), "Unexpected gateway port")
+				Expect(firstPort(&endpoint)).To(Equal(peerNetwork.Gateway.Port), "Unexpected gateway port")
 			}
 		},
 			Entry("Gateway server", GatewayServerType),

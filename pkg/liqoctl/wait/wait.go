@@ -202,46 +202,81 @@ func (w *Waiter) ForConfiguration(ctx context.Context, remoteClusterID liqov1bet
 	return nil
 }
 
-// ForGatewayPodReady waits until the pod of a Gateway resource has been created and is ready.
+// ForGatewayPodReady waits until at least one pod of a Gateway resource has been created and is ready.
 func (w *Waiter) ForGatewayPodReady(ctx context.Context, gateway client.Object) error {
-	gatewayDeployment := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      forge.GatewayResourceName(gateway.GetName()),
-			Namespace: gateway.GetNamespace(),
-		},
-	}
-	s := w.Printer.StartSpinner(fmt.Sprintf("Waiting for gateway pod %s to be ready", gatewayDeployment.GetName()))
+	baseName := forge.GatewayResourceName(gateway.GetName())
+	s := w.Printer.StartSpinner(fmt.Sprintf("Waiting for gateway pods of %s to be ready", gateway.GetName()))
 	err := wait.PollUntilContextCancel(ctx, 1*time.Second, true, func(ctx context.Context) (done bool, err error) {
-		err = w.CRClient.Get(ctx, client.ObjectKeyFromObject(gatewayDeployment), gatewayDeployment)
-		if err != nil {
-			return false, client.IgnoreNotFound(err)
+		replicas := gatewayReplicas(gateway)
+		for i := int32(0); i < replicas; i++ {
+			gatewayDeployment := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
+				Name:      fmt.Sprintf("%s-%d", baseName, i),
+				Namespace: gateway.GetNamespace(),
+			}}
+			if err = w.CRClient.Get(ctx, client.ObjectKeyFromObject(gatewayDeployment), gatewayDeployment); err != nil {
+				if apierrors.IsNotFound(err) {
+					continue
+				}
+				return false, err
+			}
+			if gatewayDeployment.Status.ReadyReplicas > 0 {
+				return true, nil
+			}
 		}
-		return gatewayDeployment.Status.ReadyReplicas > 0, nil
+		return false, nil
 	})
 	if err != nil {
-		s.Fail(fmt.Sprintf("Failed waiting for gateway pod %s to be ready: %s", gatewayDeployment.GetName(), output.PrettyErr(err)))
+		s.Fail(fmt.Sprintf("Failed waiting for gateway pods of %s to be ready: %s", gateway.GetName(), output.PrettyErr(err)))
 		return err
 	}
-	s.Success(fmt.Sprintf("Gateway pod %s is ready", gatewayDeployment.GetName()))
+	s.Success(fmt.Sprintf("Gateway pods of %s are ready", gateway.GetName()))
 	return nil
 }
 
-// ForGatewayServerStatusEndpoint waits until the service of a Gateway resource has been created
-// (i.e., until its endpoint status is not set).
+// gatewayReplicas returns the spec replicas for a GatewayServer or GatewayClient.
+// Callers must pass one of those two types; otherwise it returns 0.
+func gatewayReplicas(gateway client.Object) int32 {
+	switch g := gateway.(type) {
+	case *networkingv1beta1.GatewayServer:
+		return g.Spec.Replicas
+	case *networkingv1beta1.GatewayClient:
+		return g.Spec.Replicas
+	}
+	return 0
+}
+
+// ForGatewayServerStatusEndpoint waits until all services of a GatewayServer resource have been created
+// and their endpoints are populated in the status (one endpoint per replica).
 func (w *Waiter) ForGatewayServerStatusEndpoint(ctx context.Context, gwServer *networkingv1beta1.GatewayServer) error {
-	s := w.Printer.StartSpinner("Waiting for gateway server Service to be created")
+	s := w.Printer.StartSpinner(fmt.Sprintf("Waiting for all gateway server endpoints of %s to be ready", gwServer.Name))
 	err := wait.PollUntilContextCancel(ctx, 1*time.Second, true, func(ctx context.Context) (done bool, err error) {
 		err = w.CRClient.Get(ctx, client.ObjectKey{Name: gwServer.Name, Namespace: gwServer.Namespace}, gwServer)
 		if err != nil {
 			return false, client.IgnoreNotFound(err)
 		}
-		return gwServer.Status.Endpoint != nil && len(gwServer.Status.Endpoint.Addresses) > 0, nil
+		endpoints := gwServer.Status.Endpoints
+		// Fallback to the deprecated single endpoint for resources created with the old API.
+		if len(endpoints) == 0 && gwServer.Status.Endpoint != nil {
+			endpoints = []networkingv1beta1.EndpointStatus{*gwServer.Status.Endpoint}
+		}
+		// Wait for the number of endpoints to exactly match the desired number of replicas.
+		// Using "==" instead of ">=" prevents liqoctl from using stale endpoints when scaling
+		// down the gateway, which would make the GatewayClient spec invalid.
+		if len(endpoints) != int(gwServer.Spec.Replicas) {
+			return false, nil
+		}
+		for i := range endpoints {
+			if len(endpoints[i].Addresses) == 0 || (len(endpoints[i].Ports) == 0 && endpoints[i].Port == 0) {
+				return false, nil
+			}
+		}
+		return true, nil
 	})
 	if err != nil {
-		s.Fail(fmt.Sprintf("Failed waiting for gateway server Service to be created: %s", output.PrettyErr(err)))
+		s.Fail(fmt.Sprintf("Failed waiting for all gateway server endpoints of %s to be ready: %s", gwServer.Name, output.PrettyErr(err)))
 		return err
 	}
-	s.Success("Gateway server Service created successfully")
+	s.Success(fmt.Sprintf("All gateway server endpoints of %s are ready", gwServer.Name))
 	return nil
 }
 
@@ -283,52 +318,33 @@ func (w *Waiter) ForGatewayClientSecretRef(ctx context.Context, gwClient *networ
 	return nil
 }
 
-// ForConnection waits until the Connection resource has been created.
-func (w *Waiter) ForConnection(ctx context.Context, namespace string,
-	remoteCluster liqov1beta1.ClusterID) (*networkingv1beta1.Connection, error) {
-	s := w.Printer.StartSpinner("Waiting for Connection to be created")
-	var conn *networkingv1beta1.Connection
+// ForConnectionsEstablished waits until all Connection resources associated with the given gateway
+// (one per replica) exist and are in the Connected state.
+func (w *Waiter) ForConnectionsEstablished(ctx context.Context, gateway client.Object,
+	remoteCluster liqov1beta1.ClusterID) error {
+	replicas := gatewayReplicas(gateway)
+	s := w.Printer.StartSpinner(fmt.Sprintf("Waiting for %d Connection(s) of %s to be established", replicas, gateway.GetName()))
 	err := wait.PollUntilContextCancel(ctx, 1*time.Second, true, func(ctx context.Context) (done bool, err error) {
 		remoteClusterIDSelector := labels.Set{consts.RemoteClusterID: string(remoteCluster)}.AsSelector()
-		connections, err := getters.ListConnectionsByLabel(ctx, w.CRClient, namespace, remoteClusterIDSelector)
+		connections, err := getters.ListConnectionsByLabel(ctx, w.CRClient, gateway.GetNamespace(), remoteClusterIDSelector)
 		if err != nil {
 			return false, client.IgnoreNotFound(err)
 		}
-
-		switch len(connections.Items) {
-		case 0:
+		if len(connections.Items) < int(replicas) {
 			return false, nil
-		case 1:
-			conn = &connections.Items[0]
-			return true, nil
-		default:
-			return false, fmt.Errorf("more than one Connection resource found for remote cluster %q", remoteCluster)
 		}
+		for i := range connections.Items {
+			if connections.Items[i].Status.Value != networkingv1beta1.Connected {
+				return false, nil
+			}
+		}
+		return true, nil
 	})
 	if err != nil {
-		s.Fail(fmt.Sprintf("Failed waiting for Connection to be created: %s", output.PrettyErr(err)))
-		return nil, err
-	}
-	s.Success("Connection created successfully")
-	return conn, nil
-}
-
-// ForConnectionEstablished waits until the status of the Connection is established.
-func (w *Waiter) ForConnectionEstablished(ctx context.Context, conn *networkingv1beta1.Connection) error {
-	s := w.Printer.StartSpinner("Waiting for Connection status to be established")
-	err := wait.PollUntilContextCancel(ctx, 1*time.Second, true, func(ctx context.Context) (done bool, err error) {
-		err = w.CRClient.Get(ctx, client.ObjectKeyFromObject(conn), conn)
-		if err != nil {
-			return false, client.IgnoreNotFound(err)
-		}
-		return conn.Status.Value == networkingv1beta1.Connected, nil
-	})
-	if err != nil {
-		s.Fail(fmt.Sprintf("Failed waiting for Connection status to be established: %s", output.PrettyErr(err)))
+		s.Fail(fmt.Sprintf("Failed waiting for %d Connection(s) of %s to be established: %s", replicas, gateway.GetName(), output.PrettyErr(err)))
 		return err
 	}
-
-	s.Success("Connection is established")
+	s.Success(fmt.Sprintf("%d Connection(s) of %s are established", replicas, gateway.GetName()))
 	return nil
 }
 

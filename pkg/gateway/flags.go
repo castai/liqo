@@ -39,29 +39,17 @@ const (
 	FlagNameNodeName FlagName = "node-name"
 	// FlagNamePodName is the name of the pod.
 	FlagNamePodName FlagName = "pod-name"
-	// FlagContainerName is the name of the container.
-	FlagContainerName FlagName = "container-name"
 
 	// FlagNameGatewayUID is the UID of the Gateway resource.
 	FlagNameGatewayUID FlagName = "gateway-uid"
+	// FlagNameReplicaID is the stable identifier of the gateway replica.
+	FlagNameReplicaID FlagName = "replica-id"
 
 	// FlagNameMode is the mode in which the gateway is configured.
 	FlagNameMode FlagName = "mode"
 
-	// FlagConcurrentContainersNames is the names of the containers that the gateway container must wait for.
-	FlagConcurrentContainersNames FlagName = "concurrent-containers-names"
-
 	// FlagNameReconcileTimeout is the reconciliation timeout.
 	FlagNameReconcileTimeout FlagName = "reconcile-timeout"
-
-	// FlagNameLeaderElection is the flag to enable leader election.
-	FlagNameLeaderElection FlagName = "leader-election"
-	// FlagNameLeaderElectionLeaseDuration is the lease duration for the leader election.
-	FlagNameLeaderElectionLeaseDuration FlagName = "leader-election-lease-duration"
-	// FlagNameLeaderElectionRenewDeadline is the renew deadline for the leader election.
-	FlagNameLeaderElectionRenewDeadline FlagName = "leader-election-renew-deadline"
-	// FlagNameLeaderElectionRetryPeriod is the retry period for the leader election.
-	FlagNameLeaderElectionRetryPeriod FlagName = "leader-election-retry-period"
 
 	// FlagNameMetricsAddress is the address for the metrics endpoint.
 	FlagNameMetricsAddress FlagName = "metrics-address"
@@ -100,7 +88,6 @@ var RequiredFlags = []FlagName{
 	FlagNameGatewayUID,
 	FlagNameNodeName,
 	FlagNamePodName,
-	FlagContainerName,
 }
 
 // InitFlags initializes the flags for the gateway.
@@ -110,24 +97,13 @@ func InitFlags(flagset *pflag.FlagSet, opts *Options) {
 	flagset.StringVar(&opts.RemoteClusterID, FlagNameRemoteClusterID.String(), "", "ClusterID of the remote cluster")
 	flagset.StringVar(&opts.NodeName, FlagNameNodeName.String(), "", "Node name")
 	flagset.StringVar(&opts.PodName, FlagNamePodName.String(), "", "Pod name")
-	flagset.StringVar(&opts.ContainerName, FlagContainerName.String(), "", "Container name")
 
 	flagset.StringVar(&opts.GatewayUID, FlagNameGatewayUID.String(), "", "Parent gateway resource UID")
+	flagset.Int32Var(&opts.ReplicaID, FlagNameReplicaID.String(), 0, "Stable identifier of the gateway replica")
 
 	flagset.Var(&opts.Mode, FlagNameMode.String(), "Parent gateway mode")
 
-	flagset.StringSliceVar(&opts.ConcurrentContainersNames, FlagConcurrentContainersNames.String(),
-		[]string{}, "the container list that gateway container must wait for")
-
 	flagset.DurationVar(&opts.ReconcileTimeout, FlagNameReconcileTimeout.String(), 10*time.Second, "Reconciliation timeout")
-
-	flagset.BoolVar(&opts.LeaderElection, FlagNameLeaderElection.String(), false, "Enable leader election")
-	flagset.DurationVar(&opts.LeaderElectionLeaseDuration, FlagNameLeaderElectionLeaseDuration.String(), 15*time.Second,
-		"LeaseDuration for the leader election")
-	flagset.DurationVar(&opts.LeaderElectionRenewDeadline, FlagNameLeaderElectionRenewDeadline.String(), 10*time.Second,
-		"RenewDeadline for the leader election")
-	flagset.DurationVar(&opts.LeaderElectionRetryPeriod, FlagNameLeaderElectionRetryPeriod.String(), 2*time.Second,
-		"RetryPeriod for the leader election")
 
 	flagset.StringVar(&opts.MetricsAddress, FlagNameMetricsAddress.String(), "0", "Address for the metrics endpoint")
 	flagset.StringVar(&opts.ProbeAddr, FlagNameProbeAddr.String(), "0", "Address for the health probe endpoint")
@@ -146,12 +122,6 @@ func InitFlags(flagset *pflag.FlagSet, opts *Options) {
 func MarkFlagsRequired(cmd *cobra.Command) error {
 	for _, flag := range RequiredFlags {
 		if err := cmd.MarkFlagRequired(flag.String()); err != nil {
-			return err
-		}
-	}
-
-	if cmd.Name() == "liqo-gateway" {
-		if err := cmd.MarkFlagRequired(FlagConcurrentContainersNames.String()); err != nil {
 			return err
 		}
 	}

@@ -59,6 +59,7 @@ type Options struct {
 	ClientConnectAddress        string
 	ClientConnectPort           int32
 	MTU                         int
+	Replicas                    int32
 
 	// Authentication options
 	CreateResourceSlice bool
@@ -158,6 +159,7 @@ func ensureNetworking(ctx context.Context, o *Options) error {
 		ClientConnectPort:       o.ClientConnectPort,
 
 		MTU:                o.MTU,
+		Replicas:           o.Replicas,
 		DisableSharingKeys: false,
 	}
 
@@ -236,13 +238,23 @@ func ensureOffloadingPerNode(ctx context.Context, o *Options, providerClusterID 
 	}
 	namespace := tenantNs.Name
 
-	workerCount := 0
+	// Prefer worker nodes; if the cluster has only control-plane nodes (e.g. single-node
+	// clusters created with kubeadm/kind), fall back to them.
+	var selectedNodes []*corev1.Node
 	for i := range nodeList.Items {
 		node := &nodeList.Items[i]
-		if isControlPlaneNode(node) {
-			continue
+		if !isControlPlaneNode(node) {
+			selectedNodes = append(selectedNodes, node)
 		}
-		workerCount++
+	}
+	if len(selectedNodes) == 0 {
+		for i := range nodeList.Items {
+			selectedNodes = append(selectedNodes, &nodeList.Items[i])
+		}
+	}
+
+	workerCount := len(selectedNodes)
+	for _, node := range selectedNodes {
 		rsName := node.Name
 
 		rsOptions := resourceslice.Options{

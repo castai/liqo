@@ -14,7 +14,14 @@
 
 package forge
 
+import "fmt"
+
 // GatewayResourceName generates the name used for the resources created by the gateway.
 func GatewayResourceName(name string) string {
 	return "gw-" + name
+}
+
+// ReplicaResourceName generates the name used for per-replica gateway resources.
+func ReplicaResourceName(name string, replicaID int32) string {
+	return GatewayResourceName(fmt.Sprintf("%s-%d", name, replicaID))
 }

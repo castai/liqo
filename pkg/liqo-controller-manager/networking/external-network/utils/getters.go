@@ -16,6 +16,8 @@ package utils
 
 import (
 	"fmt"
+	"math"
+	"strconv"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -34,6 +36,13 @@ func ParseEndpoint(endpoint map[string]interface{}) *networkingv1beta1.EndpointS
 	if value, ok := endpoint["addresses"]; ok {
 		res.Addresses = interfaceListToList[string](value.([]interface{}))
 	}
+	if value, ok := endpoint["ports"]; ok {
+		ports := value.([]interface{})
+		res.Ports = make([]int32, len(ports))
+		for i, p := range ports {
+			res.Ports[i] = int32(p.(int64))
+		}
+	}
 	if value, ok := endpoint["port"]; ok {
 		res.Port = int32(value.(int64))
 	}
@@ -44,6 +53,38 @@ func ParseEndpoint(endpoint map[string]interface{}) *networkingv1beta1.EndpointS
 	return res
 }
 
+// ParseEndpointList parses a slice of unstructured endpoints into typed objects.
+// Non-map items are skipped silently.
+func ParseEndpointList(in []interface{}) []networkingv1beta1.EndpointStatus {
+	out := make([]networkingv1beta1.EndpointStatus, 0, len(in))
+	for i := range in {
+		m, ok := in[i].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if endpoint := ParseEndpoint(m); endpoint != nil {
+			out = append(out, *endpoint)
+		}
+	}
+	return out
+}
+
+// ParseInternalEndpointList parses a slice of unstructured internal endpoints into typed objects.
+// Non-map items are skipped silently.
+func ParseInternalEndpointList(in []interface{}) []networkingv1beta1.InternalGatewayEndpoint {
+	out := make([]networkingv1beta1.InternalGatewayEndpoint, 0, len(in))
+	for i := range in {
+		m, ok := in[i].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if endpoint := ParseInternalEndpoint(m); endpoint != nil {
+			out = append(out, *endpoint)
+		}
+	}
+	return out
+}
+
 // ParseInternalEndpoint parses an internal endpoint from a map.
 func ParseInternalEndpoint(internalEndpoint map[string]interface{}) *networkingv1beta1.InternalGatewayEndpoint {
 	res := &networkingv1beta1.InternalGatewayEndpoint{}
@@ -52,6 +93,20 @@ func ParseInternalEndpoint(internalEndpoint map[string]interface{}) *networkingv
 	}
 	if value, ok := internalEndpoint["node"]; ok {
 		res.Node = ptr.To(value.(string))
+	}
+	if value, ok := internalEndpoint["replicaID"]; ok {
+		switch v := value.(type) {
+		case float64:
+			res.ReplicaID = int32(v)
+		case int64:
+			if v >= math.MinInt32 && v <= math.MaxInt32 {
+				res.ReplicaID = int32(v)
+			}
+		case string:
+			if id, err := strconv.ParseInt(v, 10, 32); err == nil {
+				res.ReplicaID = int32(id)
+			}
+		}
 	}
 	return res
 }

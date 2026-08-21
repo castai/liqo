@@ -69,6 +69,7 @@ type Endpoint struct {
 }
 
 // GatewayServerSpec defines the desired state of GatewayServer.
+// +kubebuilder:validation:XValidation:rule="self.replicas >= 1",message="replicas must be at least 1"
 type GatewayServerSpec struct {
 	// ServerTemplateRef specifies the reference to the server template.
 	ServerTemplateRef corev1.ObjectReference `json:"serverTemplateRef,omitempty"`
@@ -87,11 +88,15 @@ type GatewayServerSpec struct {
 	// These labels take precedence over any labels defined in the server template.
 	// +optional
 	ServiceLabels map[string]string `json:"serviceLabels,omitempty"`
+	// Replicas specifies the number of gateway deployments to create.
+	// Each deployment has 1 replica and receives a stable replica identifier.
+	// +kubebuilder:default=1
+	// +kubebuilder:validation:Minimum=1
+	Replicas int32 `json:"replicas,omitempty"`
 }
 
 // EndpointStatus defines the observed state of the endpoint.
 // +kubebuilder:validation:XValidation:rule="!(has(self.port) && has(self.ports))",message="port and ports are mutually exclusive"
-// +kubebuilder:validation:XValidation:rule="has(self.port) || (has(self.ports) && size(self.ports) > 0)",message="at least one of port or ports must be set"
 // +kubebuilder:validation:XValidation:rule="!(has(self.ports)) || self.ports.all(p, self.ports.filter(q, q == p).size() == 1)",message="ports must not contain duplicates"
 //
 //nolint:lll // ignore long lines given by Kubebuilder marker annotations
@@ -115,6 +120,10 @@ type InternalGatewayEndpoint struct {
 	IP *IP `json:"ip,omitempty"`
 	// Node is the name of the node where the endpoint is running.
 	Node *string `json:"node,omitempty"`
+	// ReplicaID is the stable identifier of the gateway replica.
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=63
+	ReplicaID int32 `json:"replicaID"`
 }
 
 // GatewayServerStatus defines the observed state of GatewayServer.
@@ -122,11 +131,19 @@ type GatewayServerStatus struct {
 	// ServerRef specifies the reference to the server.
 	ServerRef *corev1.ObjectReference `json:"serverRef,omitempty"`
 	// Endpoint specifies the endpoint of the tunnel.
+	// Deprecated: use Endpoints instead.
 	Endpoint *EndpointStatus `json:"endpoint,omitempty"`
+	// Endpoints specifies the endpoints of the tunnel, one per replica.
+	// +kubebuilder:validation:MaxItems=64
+	Endpoints []EndpointStatus `json:"endpoints,omitempty"`
 	// SecretRef specifies the reference to the secret.
 	SecretRef *corev1.ObjectReference `json:"secretRef,omitempty"`
 	// InternalEndpoint specifies the endpoint for the internal network.
+	// Deprecated: use InternalEndpoints instead.
 	InternalEndpoint *InternalGatewayEndpoint `json:"internalEndpoint,omitempty"`
+	// InternalEndpoints specifies the endpoints for the internal network, one per replica.
+	// +kubebuilder:validation:MaxItems=64
+	InternalEndpoints []InternalGatewayEndpoint `json:"internalEndpoints,omitempty"`
 }
 
 // +kubebuilder:object:root=true

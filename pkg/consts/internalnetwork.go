@@ -27,7 +27,12 @@ const (
 	InternalFabricName = "networking.liqo.io/internal-fabric-name"
 	// InternalNodeName is the label used to identify the internal node name.
 	InternalNodeName = "networking.liqo.io/internal-node-name"
+	// GatewayReplicaID is the label used to identify the gateway replica ID.
+	GatewayReplicaID = "networking.liqo.io/replica-id"
 	// InternalFabricGeneveTunnelFinalizer is the finalizer used to ensure that the geneve tunnel is deleted and the
 	// id is freed.
 	InternalFabricGeneveTunnelFinalizer = "networking.liqo.io/internal-fabric-geneve-tunnel-finalizer"
+	// ECMPReplicaMarkBase is the base value used for policy-routing marks associated to gateway replicas.
+	// The mark for replica i is ECMPReplicaMarkBase + i.
+	ECMPReplicaMarkBase = 0x10000
 )

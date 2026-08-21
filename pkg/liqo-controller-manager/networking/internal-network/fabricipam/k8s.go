@@ -16,6 +16,7 @@ package fabricipam
 
 import (
 	"context"
+	"fmt"
 
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -60,12 +61,25 @@ func initInternalFabrics(ctx context.Context, cl client.Client, ipam *IPAM) erro
 	}
 	for i := range list.Items {
 		internalFabric := &list.Items[i]
-		if ipam.isIPConfigured(internalFabric.Spec.Interface.Gateway.IP.String()) {
-			continue
+		for j := range internalFabric.Spec.Replicas {
+			replica := &internalFabric.Spec.Replicas[j]
+			key := fmt.Sprintf("%s-%d", internalFabric.Name, replica.ReplicaID)
+			if ipam.isIPConfigured(replica.Interface.Gateway.IP.String()) {
+				continue
+			}
+			klog.Infof("Configuring fabric IPAM for internal fabric %s replica %d: %s",
+				internalFabric.Name, replica.ReplicaID, replica.Interface.Gateway.IP.String())
+			if err := ipam.configure(key, replica.Interface.Gateway.IP.String()); err != nil {
+				return err
+			}
 		}
-		klog.Infof("Configuring fabric IPAM for internal fabric %s: %s", internalFabric.Name, internalFabric.Spec.Interface.Gateway.IP.String())
-		if err := ipam.configure(internalFabric.Name, internalFabric.Spec.Interface.Gateway.IP.String()); err != nil {
-			return err
+		// Keep compatibility with deprecated single-replica internal fabrics.
+		if internalFabric.Spec.Interface != nil && internalFabric.Spec.Interface.Gateway.IP != "" &&
+			!ipam.isIPConfigured(internalFabric.Spec.Interface.Gateway.IP.String()) {
+			klog.Infof("Configuring fabric IPAM for internal fabric %s: %s", internalFabric.Name, internalFabric.Spec.Interface.Gateway.IP.String())
+			if err := ipam.configure(internalFabric.Name, internalFabric.Spec.Interface.Gateway.IP.String()); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

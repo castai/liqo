@@ -20,14 +20,13 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -38,7 +37,6 @@ import (
 	"github.com/liqotech/liqo/pkg/conncheck"
 	"github.com/liqotech/liqo/pkg/firewall"
 	"github.com/liqotech/liqo/pkg/gateway"
-	"github.com/liqotech/liqo/pkg/gateway/concurrent"
 	"github.com/liqotech/liqo/pkg/gateway/connection"
 	"github.com/liqotech/liqo/pkg/gateway/tunnel"
 	"github.com/liqotech/liqo/pkg/liqo-controller-manager/networking/external-network/remapping"
@@ -60,12 +58,10 @@ var (
 )
 
 func init() {
+	utilruntime.Must(appsv1.AddToScheme(scheme))
 	utilruntime.Must(corev1.AddToScheme(scheme))
 	utilruntime.Must(networkingv1beta1.AddToScheme(scheme))
 }
-
-// +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;create;update;delete
-// +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch;update;patch
 
 func main() {
 	var cmd = cobra.Command{
@@ -136,15 +132,6 @@ func run(cmd *cobra.Command, _ []string) error {
 	// Get the rest config.
 	cfg := config.GetConfigOrDie()
 
-	// Create the client. This client should be used only outside the reconciler.
-	// This client does not need a cache.
-	cl, err := client.New(cfg, client.Options{
-		Scheme: scheme,
-	})
-	if err != nil {
-		return fmt.Errorf("unable to create client: %w", err)
-	}
-
 	// Create the manager.
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
 		MapperProvider: mapper.LiqoMapperProvider(scheme),
@@ -154,17 +141,6 @@ func run(cmd *cobra.Command, _ []string) error {
 		},
 		HealthProbeBindAddress: connoptions.GwOptions.ProbeAddr,
 		PprofBindAddress:       connoptions.GwOptions.PprofAddr,
-		LeaderElection:         connoptions.GwOptions.LeaderElection,
-		LeaderElectionID: fmt.Sprintf(
-			"%s.%s.%s.connections.liqo.io",
-			connoptions.GwOptions.Name, connoptions.GwOptions.Namespace, connoptions.GwOptions.Mode,
-		),
-		LeaderElectionNamespace:       connoptions.GwOptions.Namespace,
-		LeaderElectionReleaseOnCancel: true,
-		LeaderElectionResourceLock:    resourcelock.LeasesResourceLock,
-		LeaseDuration:                 &connoptions.GwOptions.LeaderElectionLeaseDuration,
-		RenewDeadline:                 &connoptions.GwOptions.LeaderElectionRenewDeadline,
-		RetryPeriod:                   &connoptions.GwOptions.LeaderElectionRetryPeriod,
 	})
 	if err != nil {
 		return fmt.Errorf("unable to create manager: %w", err)
@@ -243,23 +219,6 @@ func run(cmd *cobra.Command, _ []string) error {
 	if err := fwcr.SetupWithManager(cmd.Context(), mgr,
 		connoptions.GwOptions.EnableNftMonitor, connoptions.GwOptions.ReconcileTimeout); err != nil {
 		return fmt.Errorf("unable to setup firewall configuration reconciler: %w", err)
-	}
-
-	if connoptions.GwOptions.LeaderElection {
-		runnable, err := concurrent.NewRunnableGatewayStartup(
-			cl,
-			connoptions.GwOptions.PodName,
-			connoptions.GwOptions.Name,
-			connoptions.GwOptions.Namespace,
-			connoptions.GwOptions.ConcurrentContainersNames,
-		)
-		if err != nil {
-			return fmt.Errorf("unable to create concurrent runnable: %w", err)
-		}
-
-		if err := mgr.Add(runnable); err != nil {
-			return fmt.Errorf("unable to add concurrent runnable: %w", err)
-		}
 	}
 
 	// Start the manager.

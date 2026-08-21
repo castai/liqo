@@ -18,7 +18,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"sync/atomic"
 	"time"
 
@@ -39,12 +38,14 @@ import (
 	networkingv1beta1 "github.com/liqotech/liqo/apis/networking/v1beta1"
 	"github.com/liqotech/liqo/pkg/conncheck"
 	"github.com/liqotech/liqo/pkg/consts"
+	"github.com/liqotech/liqo/pkg/gateway/forge"
 	"github.com/liqotech/liqo/pkg/gateway/tunnel"
 )
 
 // cluster-role
 // +kubebuilder:rbac:groups=networking.liqo.io,resources=connections,verbs=get;list;create;delete;update;watch
 // +kubebuilder:rbac:groups=networking.liqo.io,resources=connections/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch
 
 // ConnectionsReconciler updates the PublicKey resource used to establish the Wireguard connection.
 type ConnectionsReconciler struct {
@@ -64,13 +65,6 @@ type ConnectionsReconciler struct {
 func NewConnectionsReconciler(ctx context.Context, cl client.Client,
 	s *runtime.Scheme, er record.EventRecorder, options *Options) (*ConnectionsReconciler, error) {
 	conncheckOpts := *options.ConnCheckOptions
-	if cidr := tunnel.GetInterfaceIP(options.GwOptions.Mode, 0); cidr != "" {
-		ip, _, err := net.ParseCIDR(cidr)
-		if err != nil {
-			return nil, fmt.Errorf("unable to parse wireguard interface IP %q: %w", cidr, err)
-		}
-		conncheckOpts.PingBindIP = ip.String()
-	}
 	connchecker, err := conncheck.NewConnChecker(&conncheckOpts)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create the connection checker: %w", err)
@@ -197,8 +191,15 @@ func (r *ConnectionsReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err != nil {
 		return err
 	}
+
+	// Each gateway replica owns a distinct Connection resource. Reconcile only the one matching this replica.
+	ownConnectionName := forge.ReplicaResourceName(r.Options.GwOptions.Name, r.Options.GwOptions.ReplicaID)
+	filterByNamePredicate := predicate.NewPredicateFuncs(func(object client.Object) bool {
+		return object.GetName() == ownConnectionName
+	})
+
 	return ctrl.NewControllerManagedBy(mgr).Named(consts.CtrlConnection).
-		For(&networkingv1beta1.Connection{}, builder.WithPredicates(filterByLabelsPredicate)).
+		For(&networkingv1beta1.Connection{}, builder.WithPredicates(filterByLabelsPredicate, filterByNamePredicate)).
 		WatchesRawSource(source.Channel(r.transitions, &handler.EnqueueRequestForObject{})).
 		Complete(r)
 }
