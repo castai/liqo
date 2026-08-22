@@ -115,6 +115,7 @@ func newPeerCommand(ctx context.Context, f *factory.Factory) *cobra.Command {
 			"not directly reachable (e.g. the server is behind a NAT)")
 	cmd.Flags().IntVar(&options.MTU, "mtu", nwforge.DefaultMTU,
 		fmt.Sprintf("MTU of the Gateway server and client. Default: %d", nwforge.DefaultMTU))
+	cmd.Flags().Int32Var(&options.GwReplicas, "gw-replicas", 1, "Number of active-active gateway replicas to create")
 
 	runtime.Must(cmd.RegisterFlagCompletionFunc("gw-server-service-location", completion.Enumeration(options.ServerServiceLocation.Allowed)))
 	runtime.Must(cmd.RegisterFlagCompletionFunc("gw-server-service-type", completion.Enumeration(options.ServerServiceType.Allowed)))
