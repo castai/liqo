@@ -15,20 +15,31 @@
 package internalfabriccontroller
 
 import (
+	"cmp"
 	"context"
 	"fmt"
+	"slices"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	networkingv1beta1 "github.com/liqotech/liqo/apis/networking/v1beta1"
 	"github.com/liqotech/liqo/pkg/consts"
+	"github.com/liqotech/liqo/pkg/gateway"
+	"github.com/liqotech/liqo/pkg/gateway/forge"
+	"github.com/liqotech/liqo/pkg/liqo-controller-manager/networking/internal-network/id"
 )
 
 // InternalFabricReconciler manage InternalFabric lifecycle.
@@ -57,6 +68,10 @@ func NewInternalFabricReconciler(cl client.Client, s *runtime.Scheme, routeConfi
 // +kubebuilder:rbac:groups=networking.liqo.io,resources=genevetunnels/finalizers,verbs=update
 // +kubebuilder:rbac:groups=networking.liqo.io,resources=internalnodes,verbs=get;list;watch
 // +kubebuilder:rbac:groups=networking.liqo.io,resources=internalnodes/finalizers,verbs=update
+// +kubebuilder:rbac:groups=networking.liqo.io,resources=connections,verbs=get;list;watch
+// +kubebuilder:rbac:groups=networking.liqo.io,resources=firewallconfigurations,verbs=get;list;watch;delete;create;update;patch
+// +kubebuilder:rbac:groups=networking.liqo.io,resources=firewallconfigurations/finalizers,verbs=update
+// +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch
 
 // Reconcile manage InternalFabric lifecycle.
 func (r *InternalFabricReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -87,10 +102,47 @@ func (r *InternalFabricReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, nil
 	}
 
+	// Ensure stable ECMP marks are allocated for this fabric before building route/firewall
+	// configurations, so that mark values never change on reconnect.
+	if err := r.ensureECMPMark(ctx, internalFabric); err != nil {
+		return ctrl.Result{}, fmt.Errorf("ensuring ECMP mark: %w", err)
+	}
+
+	// List all sibling InternalFabrics with the same remote-cluster-id to build ECMP routes.
+	siblings, err := r.listSiblingInternalFabrics(ctx, internalFabric)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("listing sibling InternalFabrics: %w", err)
+	}
+
 	// route configuration
 
-	if err := r.ensureRouteConfiguration(ctx, internalFabric); err != nil {
+	connected, currentConnected, err := r.connectedGateways(ctx, internalFabric, siblings)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("filtering connected gateways: %w", err)
+	}
+
+	if err := r.ensureRouteConfiguration(ctx, internalFabric, siblings, connected); err != nil {
 		return ctrl.Result{}, fmt.Errorf("ensuring route configuration: %w", err)
+	}
+
+	// Per-gateway return-path route configuration:
+	// - Only needed when ECMP is active (multiple connected gateways).
+	// - Must be removed for disconnected gateways so that restored conntrack marks
+	//   do not keep steering traffic to a dead tunnel.
+	if len(connected) > 1 && currentConnected {
+		if err := r.ensurePerGatewayReturnRouteConfiguration(ctx, internalFabric); err != nil {
+			return ctrl.Result{}, fmt.Errorf("ensuring per-gateway return route configuration: %w", err)
+		}
+	} else {
+		if err := r.cleanupPerGatewayReturnRouteConfiguration(ctx, internalFabric); err != nil {
+			return ctrl.Result{}, fmt.Errorf("cleaning up per-gateway return route configuration: %w", err)
+		}
+	}
+
+	// firewall configuration (ECMP connection tracking marks)
+
+	if err := r.ensureFirewallConfiguration(ctx, internalFabric, siblings); err != nil {
+		return ctrl.Result{}, fmt.Errorf("ensuring firewall configuration: %w", err)
 	}
 
 	// geneve tunnels
@@ -109,6 +161,31 @@ func (r *InternalFabricReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	return ctrl.Result{}, nil
+}
+
+// ensureECMPMark ensures that the reconciled InternalFabric has a stable ECMP policy-routing
+// mark allocated and persisted in its status. It must be called before ensureRouteConfiguration
+// and ensureFirewallConfiguration, which rely on mark values being present.
+// Sibling marks are allocated by their own reconciliations; route/firewall functions will return
+// an error (and requeue) if a sibling mark is not yet present.
+func (r *InternalFabricReconciler) ensureECMPMark(ctx context.Context, internalFabric *networkingv1beta1.InternalFabric) error {
+	if internalFabric.Status.ECMPMark != nil {
+		return nil
+	}
+
+	manager := id.GetECMPMarkManager(ctx, r.Client)
+	mark, err := manager.Allocate(client.ObjectKeyFromObject(internalFabric).String())
+	if err != nil {
+		return fmt.Errorf("allocating ECMP mark for InternalFabric %q: %w",
+			client.ObjectKeyFromObject(internalFabric), err)
+	}
+	internalFabric.Status.ECMPMark = ptr.To(int(mark))
+	if err := r.Status().Update(ctx, internalFabric); err != nil {
+		return fmt.Errorf("updating ECMP mark status for InternalFabric %q: %w",
+			client.ObjectKeyFromObject(internalFabric), err)
+	}
+
+	return nil
 }
 
 // SetupWithManager register the InternalFabricReconciler to the manager.
@@ -135,10 +212,213 @@ func (r *InternalFabricReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		},
 	)
 
+	connectionEnqueuer := handler.EnqueueRequestsFromMapFunc(
+		func(ctx context.Context, obj client.Object) []reconcile.Request {
+			conn, ok := obj.(*networkingv1beta1.Connection)
+			if !ok {
+				return nil
+			}
+
+			gatewayNamespace := conn.Spec.GatewayRef.Namespace
+			if gatewayNamespace == "" {
+				gatewayNamespace = conn.Namespace
+			}
+
+			internalFabric := &networkingv1beta1.InternalFabric{}
+			if err := r.Get(ctx, types.NamespacedName{Namespace: gatewayNamespace, Name: conn.Spec.GatewayRef.Name}, internalFabric); err != nil {
+				if apierrors.IsNotFound(err) {
+					return nil
+				}
+				klog.Errorf("getting the InternalFabric %q/%q: %s", gatewayNamespace, conn.Spec.GatewayRef.Name, err)
+				return nil
+			}
+
+			return []reconcile.Request{
+				{
+					NamespacedName: client.ObjectKeyFromObject(internalFabric),
+				},
+			}
+		},
+	)
+
+	gatewayPodEnqueuer := handler.EnqueueRequestsFromMapFunc(
+		func(ctx context.Context, obj client.Object) []reconcile.Request {
+			pod, ok := obj.(*corev1.Pod)
+			if !ok {
+				return nil
+			}
+
+			gwName, ok := pod.Labels[consts.GatewayNameLabel]
+			if !ok {
+				return nil
+			}
+
+			internalFabric := &networkingv1beta1.InternalFabric{}
+			if err := r.Get(ctx, types.NamespacedName{Namespace: pod.Namespace, Name: gwName}, internalFabric); err != nil {
+				if apierrors.IsNotFound(err) {
+					return nil
+				}
+				klog.Errorf("Unable to get InternalFabric %q/%q: %s", pod.Namespace, gwName, err)
+				return nil
+			}
+
+			return []reconcile.Request{
+				{
+					NamespacedName: client.ObjectKeyFromObject(internalFabric),
+				},
+			}
+		},
+	)
+
+	gatewayPodPredicate := predicate.NewPredicateFuncs(func(obj client.Object) bool {
+		labels := obj.GetLabels()
+		return labels[consts.NetworkingComponentKey] == gateway.GatewayComponentGateway && labels[consts.GatewayNameLabel] != ""
+	})
+
 	return ctrl.NewControllerManagedBy(mgr).Named(consts.CtrlInternalFabricCM).
 		For(&networkingv1beta1.InternalFabric{}).
 		Watches(&networkingv1beta1.InternalNode{}, internalNodeEnqueuer).
+		Watches(&networkingv1beta1.Connection{}, connectionEnqueuer).
+		Watches(&corev1.Pod{}, gatewayPodEnqueuer, builder.WithPredicates(gatewayPodPredicate)).
 		Owns(&networkingv1beta1.RouteConfiguration{}).
 		Owns(&networkingv1beta1.GeneveTunnel{}).
 		Complete(r)
+}
+
+// listSiblingInternalFabrics returns all InternalFabrics with the same remote-cluster-id label,
+// including the one being reconciled.
+func (r *InternalFabricReconciler) listSiblingInternalFabrics(ctx context.Context,
+	internalFabric *networkingv1beta1.InternalFabric) ([]networkingv1beta1.InternalFabric, error) {
+	remoteClusterID, ok := internalFabric.Labels[consts.RemoteClusterID]
+	if !ok {
+		return nil, fmt.Errorf("InternalFabric %q has no %q label", client.ObjectKeyFromObject(internalFabric), consts.RemoteClusterID)
+	}
+
+	var list networkingv1beta1.InternalFabricList
+	if err := r.List(ctx, &list, client.InNamespace(internalFabric.Namespace), client.MatchingLabels{
+		consts.RemoteClusterID: remoteClusterID,
+	}); err != nil {
+		return nil, err
+	}
+
+	result := make([]networkingv1beta1.InternalFabric, 0, len(list.Items))
+	for i := range list.Items {
+		if list.Items[i].DeletionTimestamp.IsZero() && list.Items[i].Spec.Interface.Node.Name != "" {
+			result = append(result, list.Items[i])
+		}
+	}
+
+	// Sort the result by gateway name so that the order is stable across reconciliations.
+	slices.SortFunc(result, func(a, b networkingv1beta1.InternalFabric) int {
+		return cmp.Compare(gatewayNameFromInternalFabric(&a), gatewayNameFromInternalFabric(&b))
+	})
+
+	return result, nil
+}
+
+// connectedGateways returns the subset of sibling InternalFabrics whose related Connection resource is in Connected state,
+// and whose gateway pod is currently running, along with a boolean indicating whether the provided InternalFabric itself is connected.
+func (r *InternalFabricReconciler) connectedGateways(ctx context.Context,
+	internalFabric *networkingv1beta1.InternalFabric, fabrics []networkingv1beta1.InternalFabric) ([]networkingv1beta1.InternalFabric, bool, error) {
+	if _, ok := gatewayNameFromOwnerRef(internalFabric); !ok {
+		klog.V(4).Infof("InternalFabric %q has no gateway owner reference, cannot filter by Connection state",
+			client.ObjectKeyFromObject(internalFabric))
+		return fabrics, true, nil
+	}
+
+	connected := make([]networkingv1beta1.InternalFabric, 0, len(fabrics))
+	currentConnected := false
+	currentName := internalFabric.Name
+	for i := range fabrics {
+		fabric := &fabrics[i]
+		gwName := gatewayNameFromInternalFabric(fabric)
+
+		connectionName := forge.GatewayResourceName(gwName)
+		connection := &networkingv1beta1.Connection{}
+		if err := r.Get(ctx, types.NamespacedName{
+			Namespace: internalFabric.Namespace,
+			Name:      connectionName,
+		}, connection); err != nil {
+			if apierrors.IsNotFound(err) {
+				klog.V(4).Infof("Connection %q/%q not found, skipping fabric %q",
+					internalFabric.Namespace, connectionName, gwName)
+				continue
+			}
+			return nil, false, fmt.Errorf("getting Connection %q/%q: %w",
+				internalFabric.Namespace, connectionName, err)
+		}
+
+		if connection.Status.Value != networkingv1beta1.Connected {
+			klog.V(4).Infof("Connection %q/%q status is %q, skipping fabric %q",
+				internalFabric.Namespace, connectionName, connection.Status.Value, gwName)
+			continue
+		}
+
+		running, err := r.gatewayPodRunning(ctx, fabric)
+		if err != nil {
+			return nil, false, fmt.Errorf("checking gateway pod for fabric %q: %w", gwName, err)
+		}
+
+		if !running {
+			klog.V(4).Infof("Gateway pod for fabric %q is not running, skipping fabric", gwName)
+			continue
+		}
+
+		connected = append(connected, *fabric)
+		if fabric.Name == currentName {
+			currentConnected = true
+		}
+	}
+
+	return connected, currentConnected, nil
+}
+
+// gatewayPodRunning returns true if there is at least one running gateway pod for the given InternalFabric.
+func (r *InternalFabricReconciler) gatewayPodRunning(ctx context.Context,
+	internalFabric *networkingv1beta1.InternalFabric) (bool, error) {
+	gwName := gatewayNameFromInternalFabric(internalFabric)
+
+	var podList corev1.PodList
+	if err := r.List(ctx, &podList, client.InNamespace(internalFabric.Namespace), client.MatchingLabels{
+		consts.NetworkingComponentKey: gateway.GatewayComponentGateway,
+		consts.GatewayNameLabel:       gwName,
+	}); err != nil {
+		return false, fmt.Errorf("listing gateway pods for %q: %w", gwName, err)
+	}
+
+	for i := range podList.Items {
+		pod := &podList.Items[i]
+		if pod.DeletionTimestamp.IsZero() && pod.Status.Phase == corev1.PodRunning && pod.Status.PodIP != "" {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+// gatewayNameFromInternalFabric returns the gateway name from the InternalFabric's controller owner reference,
+// falling back to the InternalFabric name.
+func gatewayNameFromInternalFabric(internalFabric *networkingv1beta1.InternalFabric) string {
+	if owner := metav1.GetControllerOf(internalFabric); owner != nil {
+		return owner.Name
+	}
+	return internalFabric.Name
+}
+
+// gatewayNameFromOwnerRef returns the name of the gateway owner reference of the InternalFabric.
+func gatewayNameFromOwnerRef(internalFabric *networkingv1beta1.InternalFabric) (string, bool) {
+	owner := metav1.GetControllerOf(internalFabric)
+	if owner == nil {
+		return "", false
+	}
+	return owner.Name, true
+}
+
+// fabricECMPMark returns the stable ECMP policy-routing mark assigned to the given InternalFabric.
+// It returns an error if the mark has not been allocated yet (ensureECMPMarks should be called first).
+func fabricECMPMark(internalFabric *networkingv1beta1.InternalFabric) (int, error) {
+	if internalFabric.Status.ECMPMark == nil {
+		return 0, fmt.Errorf("InternalFabric %q has no ECMP mark allocated", client.ObjectKeyFromObject(internalFabric))
+	}
+	return *internalFabric.Status.ECMPMark, nil
 }

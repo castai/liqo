@@ -39,6 +39,7 @@ import (
 	networkingv1beta1 "github.com/liqotech/liqo/apis/networking/v1beta1"
 	"github.com/liqotech/liqo/pkg/conncheck"
 	"github.com/liqotech/liqo/pkg/consts"
+	"github.com/liqotech/liqo/pkg/gateway/forge"
 	"github.com/liqotech/liqo/pkg/gateway/tunnel"
 )
 
@@ -105,7 +106,7 @@ func (r *ConnectionsReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			return ctrl.Result{}, err
 		}
 
-		status, err := r.ConnChecker.GetStatus(r.Options.GwOptions.RemoteClusterID)
+		status, err := r.ConnChecker.GetStatus(r.Options.GwOptions.Name)
 		var (
 			latency         time.Duration
 			connStatusValue = networkingv1beta1.ConnectionError
@@ -136,11 +137,12 @@ func (r *ConnectionsReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	return ctrl.Result{}, nil
 }
 
-// ensureSender adds the conncheck sender for the reconciler's remote cluster if it isn't
+// ensureSender adds the conncheck sender for this gateway if it isn't
 // already running. It is a no-op after the first successful call.
 func (r *ConnectionsReconciler) ensureSender(ctx context.Context, key types.NamespacedName) error {
 	clusterID := r.Options.GwOptions.RemoteClusterID
-	if r.ConnChecker.HasSender(clusterID) {
+	gwName := r.Options.GwOptions.Name
+	if r.ConnChecker.HasSender(gwName) {
 		return nil
 	}
 
@@ -149,8 +151,8 @@ func (r *ConnectionsReconciler) ensureSender(ctx context.Context, key types.Name
 		return fmt.Errorf("unable to get the remote interface IP: %w", err)
 	}
 
-	observer := onTransition(ObserveLatency(clusterID), r.enqueueTransition(key))
-	if err := r.ConnChecker.AddSender(ctx, clusterID, remoteIP, observer); err != nil {
+	observer := onTransition(ObserveLatency(clusterID, gwName), r.enqueueTransition(key))
+	if err := r.ConnChecker.AddSender(ctx, gwName, remoteIP, observer); err != nil {
 		var dupErr *conncheck.DuplicateError
 		if !errors.As(err, &dupErr) {
 			return fmt.Errorf("unable to add the sender: %w", err)
@@ -159,7 +161,7 @@ func (r *ConnectionsReconciler) ensureSender(ctx context.Context, key types.Name
 		return nil
 	}
 
-	go r.ConnChecker.RunSender(clusterID)
+	go r.ConnChecker.RunSender(gwName)
 	return nil
 }
 
@@ -197,8 +199,16 @@ func (r *ConnectionsReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err != nil {
 		return err
 	}
+
+	// Each gateway pod owns a distinct Connection resource named gw-<gatewayName>.
+	// Filter by name so each pod only reconciles its own Connection.
+	ownConnectionName := forge.GatewayResourceName(r.Options.GwOptions.Name)
+	filterByNamePredicate := predicate.NewPredicateFuncs(func(object client.Object) bool {
+		return object.GetName() == ownConnectionName
+	})
+
 	return ctrl.NewControllerManagedBy(mgr).Named(consts.CtrlConnection).
-		For(&networkingv1beta1.Connection{}, builder.WithPredicates(filterByLabelsPredicate)).
+		For(&networkingv1beta1.Connection{}, builder.WithPredicates(filterByLabelsPredicate, filterByNamePredicate)).
 		WatchesRawSource(source.Channel(r.transitions, &handler.EnqueueRequestForObject{})).
 		Complete(r)
 }
