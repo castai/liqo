@@ -206,20 +206,30 @@ func (r *GeneveTunnelReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return obj.GetNamespace() == r.Options.GwOptions.Namespace
 	})
 
+	// Each gateway pod should only reconcile GeneveTunnels belonging to its own InternalFabric.
+	gatewayPredicate := predicate.NewPredicateFuncs(func(obj client.Object) bool {
+		return obj.GetLabels()[consts.InternalFabricName] == r.Options.GwOptions.Name
+	})
+
+	internalFabricPredicate := predicate.NewPredicateFuncs(func(obj client.Object) bool {
+		return obj.GetName() == r.Options.GwOptions.Name
+	})
+
 	return ctrl.NewControllerManagedBy(mgr).Named(consts.CtrlInternalNodeGeneve).
 		For(&networkingv1beta1.GeneveTunnel{},
-			builder.WithPredicates(namespacePredicate, predicate.GenerationChangedPredicate{})).
+			builder.WithPredicates(namespacePredicate, gatewayPredicate, predicate.GenerationChangedPredicate{})).
 		Watches(&networkingv1beta1.InternalNode{},
 			handler.EnqueueRequestsFromMapFunc(r.internalNodeEnqueuer)).
 		Watches(&networkingv1beta1.InternalFabric{},
 			handler.EnqueueRequestsFromMapFunc(r.internalFabricEnqueuer),
-			builder.WithPredicates(namespacePredicate)).
+			builder.WithPredicates(namespacePredicate, internalFabricPredicate)).
 		Complete(r)
 }
 
 func (r *GeneveTunnelReconciler) internalNodeEnqueuer(ctx context.Context, obj client.Object) []reconcile.Request {
 	list, err := getters.ListGeneveTunnelsByLabels(ctx, r.Client, r.Options.GwOptions.Namespace, labels.SelectorFromSet(labels.Set{
-		consts.InternalNodeName: obj.GetName(),
+		consts.InternalNodeName:   obj.GetName(),
+		consts.InternalFabricName: r.Options.GwOptions.Name,
 	}))
 	if err != nil {
 		klog.Errorf("Failed to list genevetunnels for internalnode %s: %v", obj.GetName(), err)

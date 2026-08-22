@@ -21,6 +21,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -28,6 +29,7 @@ import (
 	liqov1beta1 "github.com/liqotech/liqo/apis/core/v1beta1"
 	networkingv1beta1 "github.com/liqotech/liqo/apis/networking/v1beta1"
 	offloadingv1beta1 "github.com/liqotech/liqo/apis/offloading/v1beta1"
+	"github.com/liqotech/liqo/pkg/consts"
 	"github.com/liqotech/liqo/pkg/gateway/forge"
 	"github.com/liqotech/liqo/pkg/utils"
 	fcutils "github.com/liqotech/liqo/pkg/utils/foreigncluster"
@@ -66,9 +68,14 @@ func (r *ForeignClusterReconciler) handleConnectionStatus(ctx context.Context,
 	fc *liqov1beta1.ForeignCluster, statusExceptions map[liqov1beta1.ConditionType]statusException) error {
 	clusterID := fc.Spec.ClusterID
 
-	connection, err := getters.GetConnectionByClusterID(ctx, r.Client, string(clusterID))
-	switch {
-	case errors.IsNotFound(err):
+	remoteClusterIDSelector := labels.Set{consts.RemoteClusterID: string(clusterID)}.AsSelector()
+	connections, err := getters.ListConnectionsByLabel(ctx, r.Client, corev1.NamespaceAll, remoteClusterIDSelector)
+	if err != nil {
+		klog.Errorf("an error occurred while listing the Connection resources for the ForeignCluster %q: %s", clusterID, err)
+		return err
+	}
+
+	if len(connections.Items) == 0 {
 		klog.V(6).Infof("Connection resource not found for ForeignCluster %q", clusterID)
 		fcutils.DeleteModuleCondition(&fc.Status.Modules.Networking, liqov1beta1.NetworkConnectionStatusCondition)
 		statusExceptions[liqov1beta1.NetworkConnectionStatusCondition] = statusException{
@@ -76,25 +83,38 @@ func (r *ForeignClusterReconciler) handleConnectionStatus(ctx context.Context,
 			Reason:              connectionMissingReason,
 			Message:             connectionMissingMessage,
 		}
-	case err != nil:
-		klog.Errorf("an error occurred while getting the Connection resource for the ForeignCluster %q: %s", clusterID, err)
-		return err
-	default:
-		fcutils.EnableModuleNetworking(fc)
-		switch connection.Status.Value {
+		return nil
+	}
+
+	fcutils.EnableModuleNetworking(fc)
+
+	// With multiple gateways, check if at least one connection is Connected.
+	anyConnected := false
+	anyConnecting := false
+	for i := range connections.Items {
+		switch connections.Items[i].Status.Value {
 		case networkingv1beta1.Connected:
-			fcutils.EnsureModuleCondition(&fc.Status.Modules.Networking,
-				liqov1beta1.NetworkConnectionStatusCondition, liqov1beta1.ConditionStatusEstablished,
-				connectionEstablishedReason, connectionEstablishedMessage)
+			anyConnected = true
 		case networkingv1beta1.Connecting:
-			fcutils.EnsureModuleCondition(&fc.Status.Modules.Networking,
-				liqov1beta1.NetworkConnectionStatusCondition, liqov1beta1.ConditionStatusPending,
-				connectionPendingReason, connectionPendingMessage)
+			anyConnecting = true
 		default:
-			fcutils.EnsureModuleCondition(&fc.Status.Modules.Networking,
-				liqov1beta1.NetworkConnectionStatusCondition, liqov1beta1.ConditionStatusError,
-				connectionErrorReason, connectionErrorMessage)
+			// ConnectionError or empty — nothing to track.
 		}
+	}
+
+	switch {
+	case anyConnected:
+		fcutils.EnsureModuleCondition(&fc.Status.Modules.Networking,
+			liqov1beta1.NetworkConnectionStatusCondition, liqov1beta1.ConditionStatusEstablished,
+			connectionEstablishedReason, connectionEstablishedMessage)
+	case anyConnecting:
+		fcutils.EnsureModuleCondition(&fc.Status.Modules.Networking,
+			liqov1beta1.NetworkConnectionStatusCondition, liqov1beta1.ConditionStatusPending,
+			connectionPendingReason, connectionPendingMessage)
+	default:
+		fcutils.EnsureModuleCondition(&fc.Status.Modules.Networking,
+			liqov1beta1.NetworkConnectionStatusCondition, liqov1beta1.ConditionStatusError,
+			connectionErrorReason, connectionErrorMessage)
 	}
 	return nil
 }
@@ -103,10 +123,19 @@ func (r *ForeignClusterReconciler) handleGatewaysStatus(ctx context.Context,
 	fc *liqov1beta1.ForeignCluster, statusExceptions map[liqov1beta1.ConditionType]statusException) error {
 	clusterID := fc.Spec.ClusterID
 
-	gwServer, errServer := getters.GetGatewayServerByClusterID(ctx, r.Client, clusterID, corev1.NamespaceAll)
-	gwClient, errClient := getters.GetGatewayClientByClusterID(ctx, r.Client, clusterID, corev1.NamespaceAll)
+	gwServerList, errServer := getters.ListGatewayServersByClusterID(ctx, r.Client, clusterID, corev1.NamespaceAll)
+	gwClientList, errClient := getters.ListGatewayClientsByClusterID(ctx, r.Client, clusterID, corev1.NamespaceAll)
 
-	if errors.IsNotFound(errServer) && errors.IsNotFound(errClient) {
+	serverCount := 0
+	if errServer == nil && gwServerList != nil {
+		serverCount = len(gwServerList.Items)
+	}
+	clientCount := 0
+	if errClient == nil && gwClientList != nil {
+		clientCount = len(gwClientList.Items)
+	}
+
+	if serverCount == 0 && clientCount == 0 {
 		klog.V(6).Infof("Both GatewayServer and GatewayClient resources not found for ForeignCluster %q", clusterID)
 		statusExceptions[liqov1beta1.NetworkGatewayPresenceCondition] = statusException{
 			ConditionStatusType: liqov1beta1.ConditionStatusNotReady,
@@ -121,31 +150,19 @@ func (r *ForeignClusterReconciler) handleGatewaysStatus(ctx context.Context,
 		}
 	}
 
-	switch {
-	case errors.IsNotFound(errServer):
+	// Handle GatewayServer status
+	if serverCount == 0 {
 		klog.V(6).Infof("GatewayServer resource not found for ForeignCluster %q", clusterID)
 		fcutils.DeleteModuleCondition(&fc.Status.Modules.Networking, liqov1beta1.NetworkGatewayServerStatusCondition)
-	case errServer != nil:
-		klog.Errorf("an error occurred while getting the GatewayServer resource for the ForeignCluster %q: %s", clusterID, errServer)
-		return errServer
-	default:
+	} else {
 		fcutils.EnableModuleNetworking(fc)
-		gwDeployment := &appsv1.Deployment{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      forge.GatewayResourceName(gwServer.GetName()),
-				Namespace: gwServer.GetNamespace(),
-			},
-		}
-		if err := r.Get(ctx, client.ObjectKeyFromObject(gwDeployment), gwDeployment); err != nil {
-			klog.Errorf("an error occurred while getting the GatewayServer deployment for the ForeignCluster %q: %s", clusterID, err)
-			return err
-		}
+		allReady, someNotReady := r.checkGwServerDeploymentsReady(ctx, gwServerList.Items)
 		switch {
-		case gwDeployment.Status.ReadyReplicas == 0:
+		case !allReady && !someNotReady:
 			fcutils.EnsureModuleCondition(&fc.Status.Modules.Networking,
 				liqov1beta1.NetworkGatewayServerStatusCondition, liqov1beta1.ConditionStatusNotReady,
 				gatewaysNotReadyReason, gatewaysNotReadyMessage)
-		case gwDeployment.Status.UnavailableReplicas > 0:
+		case someNotReady:
 			fcutils.EnsureModuleCondition(&fc.Status.Modules.Networking,
 				liqov1beta1.NetworkGatewayServerStatusCondition, liqov1beta1.ConditionStatusSomeNotReady,
 				gatewaySomeNotReadyReason, gatewaySomeNotReadyMessage)
@@ -156,31 +173,19 @@ func (r *ForeignClusterReconciler) handleGatewaysStatus(ctx context.Context,
 		}
 	}
 
-	switch {
-	case errors.IsNotFound(errClient):
+	// Handle GatewayClient status
+	if clientCount == 0 {
 		klog.V(6).Infof("GatewayClient resource not found for ForeignCluster %q", clusterID)
 		fcutils.DeleteModuleCondition(&fc.Status.Modules.Networking, liqov1beta1.NetworkGatewayClientStatusCondition)
-	case errClient != nil:
-		klog.Errorf("an error occurred while getting the GatewayClient resource for the ForeignCluster %q: %s", clusterID, errClient)
-		return errClient
-	default:
+	} else {
 		fcutils.EnableModuleNetworking(fc)
-		gwDeployment := &appsv1.Deployment{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      forge.GatewayResourceName(gwClient.GetName()),
-				Namespace: gwClient.GetNamespace(),
-			},
-		}
-		if err := r.Get(ctx, client.ObjectKeyFromObject(gwDeployment), gwDeployment); err != nil {
-			klog.Errorf("an error occurred while getting the GatewayClient deployment for the ForeignCluster %q: %s", clusterID, err)
-			return err
-		}
+		allReady, someNotReady := r.checkGwClientDeploymentsReady(ctx, gwClientList.Items)
 		switch {
-		case gwDeployment.Status.ReadyReplicas == 0:
+		case !allReady && !someNotReady:
 			fcutils.EnsureModuleCondition(&fc.Status.Modules.Networking,
 				liqov1beta1.NetworkGatewayClientStatusCondition, liqov1beta1.ConditionStatusNotReady,
 				gatewaysNotReadyReason, gatewaysNotReadyMessage)
-		case gwDeployment.Status.UnavailableReplicas > 0:
+		case someNotReady:
 			fcutils.EnsureModuleCondition(&fc.Status.Modules.Networking,
 				liqov1beta1.NetworkGatewayClientStatusCondition, liqov1beta1.ConditionStatusSomeNotReady,
 				gatewaySomeNotReadyReason, gatewaySomeNotReadyMessage)
@@ -192,6 +197,63 @@ func (r *ForeignClusterReconciler) handleGatewaysStatus(ctx context.Context,
 	}
 
 	return nil
+}
+
+func (r *ForeignClusterReconciler) checkGwClientDeploymentsReady(ctx context.Context,
+	gwClientList []networkingv1beta1.GatewayClient) (allReady, someNotReady bool) {
+	allReady = true
+	anyReady := false
+	for i := range gwClientList {
+		gw := &gwClientList[i]
+		ready, err := r.isGatewayDeploymentReady(ctx, gw.GetName(), gw.GetNamespace())
+		if err != nil {
+			klog.Errorf("getting the GatewayClient deployment %q: %s", gw.GetName(), err)
+			allReady = false
+			continue
+		}
+
+		if ready {
+			anyReady = true
+		} else {
+			allReady = false
+		}
+	}
+	return allReady, !allReady && anyReady
+}
+
+func (r *ForeignClusterReconciler) checkGwServerDeploymentsReady(ctx context.Context,
+	gwServerList []networkingv1beta1.GatewayServer) (allReady, someNotReady bool) {
+	allReady = true
+	anyReady := false
+	for i := range gwServerList {
+		gw := &gwServerList[i]
+		ready, err := r.isGatewayDeploymentReady(ctx, gw.GetName(), gw.GetNamespace())
+		if err != nil {
+			klog.Errorf("getting the GatewayServer deployment %q: %s", gw.GetName(), err)
+			allReady = false
+			continue
+		}
+
+		if ready {
+			anyReady = true
+		} else {
+			allReady = false
+		}
+	}
+	return allReady, !allReady && anyReady
+}
+
+func (r *ForeignClusterReconciler) isGatewayDeploymentReady(ctx context.Context, gatewayName, gatewayNamespace string) (bool, error) {
+	gwDeployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      forge.GatewayResourceName(gatewayName),
+			Namespace: gatewayNamespace,
+		},
+	}
+	if err := r.Get(ctx, client.ObjectKeyFromObject(gwDeployment), gwDeployment); err != nil {
+		return false, err
+	}
+	return gwDeployment.Status.ReadyReplicas > 0 && gwDeployment.Status.UnavailableReplicas == 0, nil
 }
 
 func (r *ForeignClusterReconciler) handleNetworkConfigurationStatus(ctx context.Context,

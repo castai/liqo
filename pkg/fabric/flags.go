@@ -47,6 +47,9 @@ const (
 	// FlagNameEnableRouteMonitor is the flag to enable the route monitor.
 	FlagNameEnableRouteMonitor FlagName = "enable-route-monitor"
 
+	// FlagNameEnableMultipathHashPolicy enables 5-tuple hashing to improve ECMP load balancing.
+	FlagNameEnableMultipathHashPolicy FlagName = "enable-multipath-hash-policy"
+
 	// FlagNameDisableKernelVersionCheck is the flag to enable the kernel version check.
 	FlagNameDisableKernelVersionCheck FlagName = "disable-kernel-version-check"
 	// FlagNameMinimumKernelVersion is the minimum kernel version required to run the wireguard interface.
@@ -80,6 +83,9 @@ func InitFlags(flagset *pflag.FlagSet, opts *Options) {
 
 	flagset.BoolVar(&opts.EnableNftMonitor, FlagNameEnableNftMonitor.String(), true, "Enable nftables monitor")
 	flagset.BoolVar(&opts.EnableRouteMonitor, FlagNameEnableRouteMonitor.String(), true, "Enable route monitor")
+
+	flagset.BoolVar(&opts.EnableMultipathHashPolicy, FlagNameEnableMultipathHashPolicy.String(), false,
+		"Set fib_multipath_hash_policy=1 to use 5-tuple hashing for multipath routing")
 
 	flagset.BoolVar(&opts.DisableKernelVersionCheck, FlagNameDisableKernelVersionCheck.String(), false, "Disable the kernel version check")
 	flagset.Var(&opts.MinimumKernelVersion, string(FlagNameMinimumKernelVersion), "Minimum kernel version required to run the wireguard interface")
