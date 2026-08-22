@@ -50,6 +50,10 @@ liqoctl network connect [flags]
 
 >Type of Gateway Client. Leave empty to use default Liqo implementation of WireGuard **(default "networking.liqo.io/v1beta1/wggatewayclienttemplates")**
 
+`--gw-replicas` _int32_:
+
+>Number of active-active gateway replicas to create **(default 1)**
+
 `--gw-server-service-loadbalancerip` _string_:
 
 >Force LoadBalancer IP of the Gateway Server service. Leave empty to use the one provided by the LoadBalancer provider

@@ -31,8 +31,9 @@ type Options struct {
 
 	ReconcileTimeout time.Duration
 
-	EnableNftMonitor   bool
-	EnableRouteMonitor bool
+	EnableNftMonitor          bool
+	EnableRouteMonitor        bool
+	EnableMultipathHashPolicy bool
 
 	DisableKernelVersionCheck bool
 	MinimumKernelVersion      kernelversion.KernelVersion

@@ -158,4 +158,37 @@ var _ = Describe("ID Tests", func() {
 
 	})
 
+	Context("with a ranged Manager", func() {
+
+		It("should allocate IDs inside the range", func() {
+			manager := NewWithRange[uint32](100, 104)
+			id, err := manager.Allocate("test")
+			Expect(err).To(Succeed())
+			Expect(id).To(BeNumerically(">=", 100))
+			Expect(id).To(BeNumerically("<", 104))
+		})
+
+		It("should not allocate IDs outside the range", func() {
+			manager := NewWithRange[uint32](100, 103)
+			_, err := manager.Allocate("a")
+			Expect(err).To(Succeed())
+			_, err = manager.Allocate("b")
+			Expect(err).To(Succeed())
+			_, err = manager.Allocate("c")
+			Expect(err).To(Succeed())
+			_, err = manager.Allocate("d")
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("should configure IDs inside the range", func() {
+			manager := NewWithRange[uint32](100, 200)
+			err := manager.Configure("test", 150)
+			Expect(err).To(Succeed())
+			id, err := manager.Allocate("test")
+			Expect(err).To(Succeed())
+			Expect(id).To(BeNumerically("==", 150))
+		})
+
+	})
+
 })
