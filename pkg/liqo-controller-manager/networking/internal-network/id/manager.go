@@ -29,23 +29,29 @@ type Manager[T Integer] struct {
 	allocatedMutex   sync.Mutex
 	allocated        map[string]T // map[name]id
 	allocatedReverse map[T]string // map[id]name
+	minID            T
 	nextAllocatedID  T
 	maxID            T
 }
 
-// New returns a new Manager.
+// New returns a new Manager using IDs in the range [0, 2^24).
 func New[T Integer]() *Manager[T] {
-	allocated := make(map[string]T)
-	allocatedReverse := make(map[T]string)
-
 	// only 24 bits are used
 	maxID := (1 << 24) - 1
+	return NewWithRange[T](0, T(maxID))
+}
+
+// NewWithRange returns a new Manager using IDs in the range [minID, maxID).
+func NewWithRange[T Integer](minID, maxID T) *Manager[T] {
+	allocated := make(map[string]T)
+	allocatedReverse := make(map[T]string)
 
 	return &Manager[T]{
 		allocated:        allocated,
 		allocatedReverse: allocatedReverse,
-		nextAllocatedID:  0,
-		maxID:            T(maxID),
+		minID:            minID,
+		nextAllocatedID:  minID,
+		maxID:            maxID,
 	}
 }
 
@@ -74,10 +80,11 @@ func (m *Manager[T]) Allocate(name string) (T, error) {
 	}
 
 	var id T
+	// First pass: search from the next candidate up to maxID.
 	for id = m.nextAllocatedID; id < m.maxID; id++ {
 		if _, ok := m.allocatedReverse[id]; !ok {
 			if id == m.maxID-1 {
-				m.nextAllocatedID = 0
+				m.nextAllocatedID = m.minID
 			} else {
 				m.nextAllocatedID = id + 1
 			}
@@ -86,10 +93,11 @@ func (m *Manager[T]) Allocate(name string) (T, error) {
 			return id, nil
 		}
 	}
-	for id = 0; id < m.maxID; id++ {
+	// Second pass: wrap around and search from minID up to nextAllocatedID.
+	for id = m.minID; id < m.nextAllocatedID; id++ {
 		if _, ok := m.allocatedReverse[id]; !ok {
 			if id == m.maxID-1 {
-				m.nextAllocatedID = 0
+				m.nextAllocatedID = m.minID
 			} else {
 				m.nextAllocatedID = id + 1
 			}
