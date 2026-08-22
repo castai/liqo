@@ -39,7 +39,7 @@ jobs:
       DOCKER_ORGANIZATION: castai-hub/library/liqo
       DOCKER_TAG: ${{ github.sha }}
       DOCKER_PUSH: "true"
-      ARCHS: linux/amd64
+      ARCHS: linux/amd64,linux/arm64
     steps:
       - name: Check out code
         uses: actions/checkout@v4

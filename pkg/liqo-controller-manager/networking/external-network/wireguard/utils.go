@@ -246,8 +246,8 @@ func getWireGuardSecret(ctx context.Context, cl client.Client, wgObj metav1.Obje
 	}
 }
 
-func listActiveGatewayPod(ctx context.Context, cl client.Client, namespace string) (*corev1.Pod, error) {
-	podsSelector := client.MatchingLabelsSelector{Selector: labels.SelectorFromSet(gateway.ForgeActiveGatewayPodLabels())}
+func listActiveGatewayPod(ctx context.Context, cl client.Client, namespace string, selector labels.Selector) (*corev1.Pod, error) {
+	podsSelector := client.MatchingLabelsSelector{Selector: selector}
 	var podList corev1.PodList
 	if err := cl.List(ctx, &podList, client.InNamespace(namespace), podsSelector); err != nil {
 		klog.Errorf("Unable to list active gateway pods in namespace %q: %v", namespace, err)
