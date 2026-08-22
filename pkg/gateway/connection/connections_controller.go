@@ -39,6 +39,7 @@ import (
 	networkingv1beta1 "github.com/liqotech/liqo/apis/networking/v1beta1"
 	"github.com/liqotech/liqo/pkg/conncheck"
 	"github.com/liqotech/liqo/pkg/consts"
+	"github.com/liqotech/liqo/pkg/gateway/forge"
 	"github.com/liqotech/liqo/pkg/gateway/tunnel"
 )
 
@@ -197,8 +198,16 @@ func (r *ConnectionsReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err != nil {
 		return err
 	}
+
+	// Each gateway pod owns a distinct Connection resource named gw-<gatewayName>.
+	// Filter by name so each pod only reconciles its own Connection.
+	ownConnectionName := forge.GatewayResourceName(r.Options.GwOptions.Name)
+	filterByNamePredicate := predicate.NewPredicateFuncs(func(object client.Object) bool {
+		return object.GetName() == ownConnectionName
+	})
+
 	return ctrl.NewControllerManagedBy(mgr).Named(consts.CtrlConnection).
-		For(&networkingv1beta1.Connection{}, builder.WithPredicates(filterByLabelsPredicate)).
+		For(&networkingv1beta1.Connection{}, builder.WithPredicates(filterByLabelsPredicate, filterByNamePredicate)).
 		WatchesRawSource(source.Channel(r.transitions, &handler.EnqueueRequestForObject{})).
 		Complete(r)
 }

@@ -19,6 +19,7 @@ import (
 	"fmt"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -57,6 +58,9 @@ func NewInternalFabricReconciler(cl client.Client, s *runtime.Scheme, routeConfi
 // +kubebuilder:rbac:groups=networking.liqo.io,resources=genevetunnels/finalizers,verbs=update
 // +kubebuilder:rbac:groups=networking.liqo.io,resources=internalnodes,verbs=get;list;watch
 // +kubebuilder:rbac:groups=networking.liqo.io,resources=internalnodes/finalizers,verbs=update
+// +kubebuilder:rbac:groups=networking.liqo.io,resources=connections,verbs=get;list;watch
+// +kubebuilder:rbac:groups=networking.liqo.io,resources=firewallconfigurations,verbs=get;list;watch;delete;create;update;patch
+// +kubebuilder:rbac:groups=networking.liqo.io,resources=firewallconfigurations/finalizers,verbs=update
 
 // Reconcile manage InternalFabric lifecycle.
 func (r *InternalFabricReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -91,6 +95,12 @@ func (r *InternalFabricReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	if err := r.ensureRouteConfiguration(ctx, internalFabric); err != nil {
 		return ctrl.Result{}, fmt.Errorf("ensuring route configuration: %w", err)
+	}
+
+	// firewall configuration (ECMP connection tracking marks)
+
+	if err := r.ensureFirewallConfiguration(ctx, internalFabric); err != nil {
+		return ctrl.Result{}, fmt.Errorf("ensuring firewall configuration: %w", err)
 	}
 
 	// geneve tunnels
@@ -135,9 +145,45 @@ func (r *InternalFabricReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		},
 	)
 
+	connectionEnqueuer := handler.EnqueueRequestsFromMapFunc(
+		func(ctx context.Context, obj client.Object) []reconcile.Request {
+			conn, ok := obj.(*networkingv1beta1.Connection)
+			if !ok {
+				return nil
+			}
+
+			gatewayNamespace := conn.Spec.GatewayRef.Namespace
+			if gatewayNamespace == "" {
+				gatewayNamespace = conn.Namespace
+			}
+
+			var internalFabricList networkingv1beta1.InternalFabricList
+			if err := r.List(ctx, &internalFabricList, client.InNamespace(gatewayNamespace)); err != nil {
+				klog.Errorf("Unable to list InternalFabrics: %s", err)
+				return nil
+			}
+
+			var requests []reconcile.Request
+			for i := range internalFabricList.Items {
+				internalFabric := &internalFabricList.Items[i]
+				owner := metav1.GetControllerOf(internalFabric)
+				if owner == nil || owner.Name != conn.Spec.GatewayRef.Name {
+					continue
+				}
+
+				requests = append(requests, reconcile.Request{
+					NamespacedName: client.ObjectKeyFromObject(internalFabric),
+				})
+			}
+
+			return requests
+		},
+	)
+
 	return ctrl.NewControllerManagedBy(mgr).Named(consts.CtrlInternalFabricCM).
 		For(&networkingv1beta1.InternalFabric{}).
 		Watches(&networkingv1beta1.InternalNode{}, internalNodeEnqueuer).
+		Watches(&networkingv1beta1.Connection{}, connectionEnqueuer).
 		Owns(&networkingv1beta1.RouteConfiguration{}).
 		Owns(&networkingv1beta1.GeneveTunnel{}).
 		Complete(r)

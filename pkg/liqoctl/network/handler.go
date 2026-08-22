@@ -16,6 +16,7 @@ package network
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -24,6 +25,7 @@ import (
 
 	liqov1beta1 "github.com/liqotech/liqo/apis/core/v1beta1"
 	networkingv1beta1 "github.com/liqotech/liqo/apis/networking/v1beta1"
+	gwforge "github.com/liqotech/liqo/pkg/gateway/forge"
 	"github.com/liqotech/liqo/pkg/liqo-controller-manager/networking/forge"
 	"github.com/liqotech/liqo/pkg/liqo-controller-manager/networking/getters"
 	"github.com/liqotech/liqo/pkg/liqoctl/factory"
@@ -58,6 +60,7 @@ type Options struct {
 	ClientConnectPort int32
 
 	MTU                int
+	Replicas           int32
 	DisableSharingKeys bool
 }
 
@@ -169,44 +172,57 @@ func (o *Options) RunConnect(ctx context.Context) error {
 		return nil
 	}
 
-	// Create gateway server on cluster 2
-	gwServer, err := cluster2.EnsureGatewayServer(ctx, o.newGatewayServerForgeOptions(o.RemoteFactory.KubeClient, cluster1.localClusterID))
-	if err != nil {
-		return err
+	replicas := int(o.Replicas)
+	if replicas < 1 {
+		replicas = 1
 	}
 
-	// Wait for the gateway pod to be ready
-	if err := cluster2.waiter.ForGatewayPodReady(ctx, gwServer); err != nil {
-		return err
+	// Create N gateway servers on cluster 2, one per replica.
+	var gwServers []*networkingv1beta1.GatewayServer
+	for i := 0; i < replicas; i++ {
+		name := forgeGatewayName(string(cluster2.localClusterID), i, replicas)
+		gwServer, err := cluster2.EnsureGatewayServer(ctx, name, o.newGatewayServerForgeOptions(o.RemoteFactory.KubeClient, cluster1.localClusterID))
+		if err != nil {
+			return err
+		}
+		gwServers = append(gwServers, gwServer)
 	}
 
-	// Wait for the endpoint status of the gateway server to be set
-	if err := cluster2.waiter.ForGatewayServerStatusEndpoint(ctx, gwServer); err != nil {
-		return err
+	// Wait for all gateway pods to be ready and endpoints to be set.
+	for _, gwServer := range gwServers {
+		if err := cluster2.waiter.ForGatewayPodReady(ctx, gwServer); err != nil {
+			return err
+		}
+		if err := cluster2.waiter.ForGatewayServerStatusEndpoint(ctx, gwServer); err != nil {
+			return err
+		}
 	}
 
-	// Create gateway client on cluster 1
+	// Create N gateway clients on cluster 1, one per server.
+	var gwClients []*networkingv1beta1.GatewayClient
+	for i, gwServer := range gwServers {
+		endpoint := gwServer.Status.Endpoint
+		if o.ClientConnectAddress != "" {
+			endpoint.Addresses = []string{o.ClientConnectAddress}
+		}
+		if o.ClientConnectPort != 0 {
+			endpoint.Port = o.ClientConnectPort
+		}
 
-	// By default address and port used by the GatewayClient are the ones written in the endpoint field of the status of the GatewayServer,
-	// unless address or port are manually overwritten
-	endpoint := gwServer.Status.Endpoint
-	if o.ClientConnectAddress != "" {
-		endpoint.Addresses = []string{o.ClientConnectAddress}
+		gwClient, err := cluster1.EnsureGatewayClient(ctx,
+			forgeGatewayName(string(cluster1.localClusterID), i, replicas),
+			o.newGatewayClientForgeOptions(o.LocalFactory.KubeClient, cluster2.localClusterID, endpoint))
+		if err != nil {
+			return err
+		}
+		gwClients = append(gwClients, gwClient)
 	}
 
-	if o.ClientConnectPort != 0 {
-		endpoint.Port = o.ClientConnectPort
-	}
-
-	gwClient, err := cluster1.EnsureGatewayClient(ctx,
-		o.newGatewayClientForgeOptions(o.LocalFactory.KubeClient, cluster2.localClusterID, endpoint))
-	if err != nil {
-		return err
-	}
-
-	// Wait for the gateway pod to be ready
-	if err := cluster1.waiter.ForGatewayPodReady(ctx, gwClient); err != nil {
-		return err
+	// Wait for all gateway client pods to be ready.
+	for _, gwClient := range gwClients {
+		if err := cluster1.waiter.ForGatewayPodReady(ctx, gwClient); err != nil {
+			return err
+		}
 	}
 
 	// If sharing keys is disabled, return immediately
@@ -214,53 +230,52 @@ func (o *Options) RunConnect(ctx context.Context) error {
 		return nil
 	}
 
-	// Wait for gateway server to set secret reference (containing the server public key) in the status
-	err = cluster2.waiter.ForGatewayServerSecretRef(ctx, gwServer)
-	if err != nil {
-		return err
-	}
-	keyServer, err := getters.ExtractKeyFromSecretRef(ctx, cluster2.local.CRClient, gwServer.Status.SecretRef)
-	if err != nil {
-		return err
-	}
+	// Exchange keys for each gateway pair.
+	for i, gwServer := range gwServers {
+		gwClient := gwClients[i]
 
-	// Create PublicKey of gateway server on cluster 1
-	if err := cluster1.EnsurePublicKey(ctx, cluster2.localClusterID, keyServer, gwClient); err != nil {
-		return err
-	}
+		// Wait for gateway server to set secret reference (containing the server public key) in the status
+		err = cluster2.waiter.ForGatewayServerSecretRef(ctx, gwServer)
+		if err != nil {
+			return err
+		}
+		keyServer, err := getters.ExtractKeyFromSecretRef(ctx, cluster2.local.CRClient, gwServer.Status.SecretRef)
+		if err != nil {
+			return err
+		}
 
-	// Wait for gateway client to set secret reference (containing the client public key) in the status
-	err = cluster1.waiter.ForGatewayClientSecretRef(ctx, gwClient)
-	if err != nil {
-		return err
-	}
-	keyClient, err := getters.ExtractKeyFromSecretRef(ctx, cluster1.local.CRClient, gwClient.Status.SecretRef)
-	if err != nil {
-		return err
-	}
+		// Create PublicKey of gateway server on cluster 1
+		if err := cluster1.EnsurePublicKey(ctx, cluster2.localClusterID, keyServer, gwClient); err != nil {
+			return err
+		}
 
-	// Create PublicKey of gateway client on cluster 2
-	if err := cluster2.EnsurePublicKey(ctx, cluster1.localClusterID, keyClient, gwServer); err != nil {
-		return err
+		// Wait for gateway client to set secret reference (containing the client public key) in the status
+		err = cluster1.waiter.ForGatewayClientSecretRef(ctx, gwClient)
+		if err != nil {
+			return err
+		}
+		keyClient, err := getters.ExtractKeyFromSecretRef(ctx, cluster1.local.CRClient, gwClient.Status.SecretRef)
+		if err != nil {
+			return err
+		}
+
+		// Create PublicKey of gateway client on cluster 2
+		if err := cluster2.EnsurePublicKey(ctx, cluster1.localClusterID, keyClient, gwServer); err != nil {
+			return err
+		}
 	}
 
 	if o.Wait {
-		// Wait for Connections on both cluster to be created.
-		conn2, err := cluster2.waiter.ForConnection(ctx, gwServer.Namespace, cluster1.localClusterID)
-		if err != nil {
-			return err
+		// Wait for all per-gateway Connections on both clusters to be established.
+		for _, gwServer := range gwServers {
+			if err := cluster2.waiter.ForConnectionByName(ctx, gwServer.Namespace, gwforge.GatewayResourceName(gwServer.Name), cluster1.localClusterID); err != nil {
+				return err
+			}
 		}
-		conn1, err := cluster1.waiter.ForConnection(ctx, gwClient.Namespace, cluster2.localClusterID)
-		if err != nil {
-			return err
-		}
-
-		// Wait for Connections on both cluster cluster to be established
-		if err := cluster1.waiter.ForConnectionEstablished(ctx, conn1); err != nil {
-			return err
-		}
-		if err := cluster2.waiter.ForConnectionEstablished(ctx, conn2); err != nil {
-			return err
+		for _, gwClient := range gwClients {
+			if err := cluster1.waiter.ForConnectionByName(ctx, gwClient.Namespace, gwforge.GatewayResourceName(gwClient.Name), cluster2.localClusterID); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -342,6 +357,15 @@ func (o *Options) initNetworkConfigs(ctx context.Context, cluster1, cluster2 *Cl
 	}
 
 	return nil
+}
+
+// forgeGatewayName returns the gateway name: <remoteClusterID> for single replica,
+// or <remoteClusterID>-<index> for multiple replicas.
+func forgeGatewayName(remoteClusterID string, index, replicas int) string {
+	if replicas > 1 {
+		return fmt.Sprintf("%s-%d", remoteClusterID, index)
+	}
+	return remoteClusterID
 }
 
 func (o *Options) newGatewayServerForgeOptions(kubeClient kubernetes.Interface, remoteClusterID liqov1beta1.ClusterID) *forge.GwServerOptions {

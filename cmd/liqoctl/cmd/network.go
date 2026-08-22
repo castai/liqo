@@ -158,6 +158,8 @@ func newNetworkConnectCommand(ctx context.Context, options *network.Options) *co
 	// Common flags
 	cmd.Flags().IntVar(&options.MTU, "mtu", forge.DefaultMTU,
 		fmt.Sprintf("MTU of the Gateway server and client. Default: %d", forge.DefaultMTU))
+	cmd.Flags().Int32Var(&options.Replicas, "gw-replicas", 1,
+		"Number of active-active gateway replicas to create")
 	cmd.Flags().BoolVar(&options.DisableSharingKeys, "disable-sharing-keys", false, "Disable the sharing of public keys between the two clusters")
 
 	runtime.Must(cmd.RegisterFlagCompletionFunc("gw-server-service-type", completion.Enumeration(options.ServerServiceType.Allowed)))

@@ -804,28 +804,46 @@ func GetConnectionByClusterIDInNamespace(ctx context.Context, cl client.Client, 
 	}
 }
 
-// GetGatewaysByClusterID returns both the GatewayServer and GatewayClient resource with the given clusterID, if not
-// found it returns a nil pointer. Normally, with a common peering, this function should return only one gateway either
-// the client or the server.
+// GetGatewaysByClusterID returns all GatewayServer and GatewayClient resources with the given clusterID.
+// If none are found, both lists will be empty (not nil). Normally, with a common peering, only one type
+// (either client or server) will have entries.
 func GetGatewaysByClusterID(ctx context.Context, cl client.Client,
-	remoteClusterID liqov1beta1.ClusterID) (*networkingv1beta1.GatewayServer, *networkingv1beta1.GatewayClient, error) {
-	gwclient, err := GetGatewayClientByClusterID(ctx, cl, remoteClusterID, corev1.NamespaceAll)
-	if err != nil && !kerrors.IsNotFound(err) {
+	remoteClusterID liqov1beta1.ClusterID) (*networkingv1beta1.GatewayServerList, *networkingv1beta1.GatewayClientList, error) {
+	gwServers, err := ListGatewayServersByClusterID(ctx, cl, remoteClusterID, corev1.NamespaceAll)
+	if err != nil {
 		return nil, nil, err
 	}
 
-	gwserver, err := GetGatewayServerByClusterID(ctx, cl, remoteClusterID, corev1.NamespaceAll)
-	if err != nil && !kerrors.IsNotFound(err) {
+	gwClients, err := ListGatewayClientsByClusterID(ctx, cl, remoteClusterID, corev1.NamespaceAll)
+	if err != nil {
 		return nil, nil, err
 	}
 
-	return gwserver, gwclient, nil
+	return gwServers, gwClients, nil
 }
 
-// GetGatewayServerByClusterID returns the GatewayServer resource with the given clusterID.
+// GetGatewayServerByClusterID returns the first GatewayServer resource with the given clusterID.
+// When multiple gateway servers exist (multi-gateway setup), the first one is returned.
+// Callers needing all gateway servers should use ListGatewayServersByClusterID instead.
 // If tenantNamespace is empty this function searches in all the namespaces in the cluster.
+//
+// Deprecated: This function is deprecated and will be removed in a future release. Use ListGatewayServersByClusterID instead.
 func GetGatewayServerByClusterID(ctx context.Context, cl client.Client,
 	remoteClusterID liqov1beta1.ClusterID, namespace string) (*networkingv1beta1.GatewayServer, error) {
+	gwServers, err := ListGatewayServersByClusterID(ctx, cl, remoteClusterID, namespace)
+	if err != nil {
+		return nil, err
+	}
+	if len(gwServers.Items) == 0 {
+		return nil, kerrors.NewNotFound(networkingv1beta1.GatewayServerGroupResource, networkingv1beta1.GatewayServerResource)
+	}
+	return &gwServers.Items[0], nil
+}
+
+// ListGatewayServersByClusterID returns all GatewayServer resources with the given clusterID.
+// If tenantNamespace is empty this function searches in all the namespaces in the cluster.
+func ListGatewayServersByClusterID(ctx context.Context, cl client.Client,
+	remoteClusterID liqov1beta1.ClusterID, namespace string) (*networkingv1beta1.GatewayServerList, error) {
 	var gwServers networkingv1beta1.GatewayServerList
 	if err := cl.List(
 		ctx, &gwServers,
@@ -836,21 +854,31 @@ func GetGatewayServerByClusterID(ctx context.Context, cl client.Client,
 	); err != nil {
 		return nil, err
 	}
-
-	switch len(gwServers.Items) {
-	case 0:
-		return nil, kerrors.NewNotFound(networkingv1beta1.GatewayServerGroupResource, networkingv1beta1.GatewayServerResource)
-	case 1:
-		return &gwServers.Items[0], nil
-	default:
-		return nil, fmt.Errorf("multiple GatewayServers found for ForeignCluster %s", remoteClusterID)
-	}
+	return &gwServers, nil
 }
 
-// GetGatewayClientByClusterID returns the GatewayClient resource with the given clusterID.
+// GetGatewayClientByClusterID returns the first GatewayClient resource with the given clusterID.
+// When multiple gateway clients exist (multi-gateway setup), the first one is returned.
+// Callers needing all gateway clients should use ListGatewayClientsByClusterID instead.
 // If tenantNamespace is empty this function searches in all the namespaces in the cluster.
+//
+// Deprecated: This function is deprecated and will be removed in a future release. Use ListGatewayClientsByClusterID instead.
 func GetGatewayClientByClusterID(ctx context.Context, cl client.Client,
 	remoteClusterID liqov1beta1.ClusterID, namespace string) (*networkingv1beta1.GatewayClient, error) {
+	gwClients, err := ListGatewayClientsByClusterID(ctx, cl, remoteClusterID, namespace)
+	if err != nil {
+		return nil, err
+	}
+	if len(gwClients.Items) == 0 {
+		return nil, kerrors.NewNotFound(networkingv1beta1.GatewayClientGroupResource, networkingv1beta1.GatewayClientResource)
+	}
+	return &gwClients.Items[0], nil
+}
+
+// ListGatewayClientsByClusterID returns all GatewayClient resources with the given clusterID.
+// If tenantNamespace is empty this function searches in all the namespaces in the cluster.
+func ListGatewayClientsByClusterID(ctx context.Context, cl client.Client,
+	remoteClusterID liqov1beta1.ClusterID, namespace string) (*networkingv1beta1.GatewayClientList, error) {
 	var gwClients networkingv1beta1.GatewayClientList
 	if err := cl.List(
 		ctx, &gwClients,
@@ -861,15 +889,7 @@ func GetGatewayClientByClusterID(ctx context.Context, cl client.Client,
 	); err != nil {
 		return nil, err
 	}
-
-	switch len(gwClients.Items) {
-	case 0:
-		return nil, kerrors.NewNotFound(networkingv1beta1.GatewayClientGroupResource, networkingv1beta1.GatewayClientResource)
-	case 1:
-		return &gwClients.Items[0], nil
-	default:
-		return nil, fmt.Errorf("multiple GatewayClients found for ForeignCluster %s", remoteClusterID)
-	}
+	return &gwClients, nil
 }
 
 // GetPublicKeyByClusterID returns the PublicKey resource with the given clusterID.
