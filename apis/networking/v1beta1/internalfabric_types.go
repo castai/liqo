@@ -67,8 +67,17 @@ type InternalFabricSpec struct {
 	GatewayIP IP `json:"gatewayIP"`
 }
 
+// InternalFabricStatus defines the observed state of InternalFabric.
+type InternalFabricStatus struct {
+	// ECMPMark is the policy-routing fwmark assigned to this gateway for ECMP consistency.
+	// It is allocated by the controller and persisted here so it remains stable across reconnects.
+	// +optional
+	ECMPMark *int `json:"ecmpMark,omitempty"`
+}
+
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:categories=liqo,shortName=if;ifabric
+// +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Gateway IP",type=string,JSONPath=`.spec.gatewayIP`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
@@ -79,7 +88,8 @@ type InternalFabric struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec InternalFabricSpec `json:"spec,omitempty"`
+	Spec   InternalFabricSpec   `json:"spec,omitempty"`
+	Status InternalFabricStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true

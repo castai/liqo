@@ -134,19 +134,22 @@ func forgeMutateRouteConfiguration(cfg *networkingv1beta1.Configuration,
 
 // GetGatewayMode returns the mode of the Gateway related to the Configuration.
 func GetGatewayMode(ctx context.Context, cl client.Client, remoteClusterID liqov1beta1.ClusterID) (gateway.Mode, error) {
-	gwserver, gwclient, err := getters.GetGatewaysByClusterID(ctx, cl, remoteClusterID)
+	gwServerList, gwClientList, err := getters.GetGatewaysByClusterID(ctx, cl, remoteClusterID)
 	if err != nil {
 		return "", err
 	}
 
+	hasServers := gwServerList != nil && len(gwServerList.Items) > 0
+	hasClients := gwClientList != nil && len(gwClientList.Items) > 0
+
 	switch {
-	case gwclient == nil && gwserver == nil:
+	case !hasServers && !hasClients:
 		return "", nil
-	case gwclient != nil && gwserver != nil:
-		return "", fmt.Errorf("multiple Gateways found for cluster %s", remoteClusterID)
-	case gwclient == nil && gwserver != nil:
+	case hasServers && hasClients:
+		return "", fmt.Errorf("both GatewayServer and GatewayClient found for cluster %s", remoteClusterID)
+	case hasServers:
 		return gateway.ModeServer, nil
-	case gwclient != nil && gwserver == nil:
+	case hasClients:
 		return gateway.ModeClient, nil
 	}
 
