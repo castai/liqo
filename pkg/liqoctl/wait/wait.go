@@ -283,6 +283,24 @@ func (w *Waiter) ForGatewayClientSecretRef(ctx context.Context, gwClient *networ
 	return nil
 }
 
+// ForConnectionByName waits until the Connection resource with the given name has been created and established.
+func (w *Waiter) ForConnectionByName(ctx context.Context, namespace, connectionName string) error {
+	s := w.Printer.StartSpinner(fmt.Sprintf("Waiting for Connection %q to be established", connectionName))
+	err := wait.PollUntilContextCancel(ctx, 1*time.Second, true, func(ctx context.Context) (done bool, err error) {
+		var conn networkingv1beta1.Connection
+		if err := w.CRClient.Get(ctx, client.ObjectKey{Name: connectionName, Namespace: namespace}, &conn); err != nil {
+			return false, client.IgnoreNotFound(err)
+		}
+		return conn.Status.Value == networkingv1beta1.Connected, nil
+	})
+	if err != nil {
+		s.Fail(fmt.Sprintf("Failed waiting for Connection %q to be established: %s", connectionName, output.PrettyErr(err)))
+		return err
+	}
+	s.Success(fmt.Sprintf("Connection %q is established", connectionName))
+	return nil
+}
+
 // ForConnection waits until the Connection resource has been created.
 func (w *Waiter) ForConnection(ctx context.Context, namespace string,
 	remoteCluster liqov1beta1.ClusterID) (*networkingv1beta1.Connection, error) {
