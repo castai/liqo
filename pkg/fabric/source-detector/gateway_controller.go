@@ -71,6 +71,11 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, fmt.Errorf("unable to get the gateway pod %q: %w", req.NamespacedName, err)
 	}
 
+	if !pod.DeletionTimestamp.IsZero() {
+		klog.V(6).Infof("Gateway pod %s is being deleted. Nothing to do", req.String())
+		return ctrl.Result{}, nil
+	}
+
 	if pod.Status.PodIP == "" {
 		// If the pod does not have an IP address, we cannot determine the source IP for the internal node.
 		// It will be reconciled again when the IP becomes available.

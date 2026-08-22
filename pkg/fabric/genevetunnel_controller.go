@@ -194,7 +194,7 @@ func (r *GeneveTunnelReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 		cc := r.connChecker.Load()
 
-		if err := r.ensureSender(cc, req.NamespacedName, gt, &internalfabric, &internalnode); err != nil {
+		if err := r.ensureSender(cc, req.NamespacedName, gt, &internalfabric); err != nil {
 			return ctrl.Result{}, err
 		}
 
@@ -225,7 +225,7 @@ func (r *GeneveTunnelReconciler) Reconcile(ctx context.Context, req ctrl.Request
 // ensureSender adds the conncheck sender for the given GeneveTunnel if it isn't already
 // running. It is a no-op after the first successful call.
 func (r *GeneveTunnelReconciler) ensureSender(cc *conncheck.ConnChecker, key types.NamespacedName,
-	gt *networkingv1beta1.GeneveTunnel, internalfabric *networkingv1beta1.InternalFabric, internalnode *networkingv1beta1.InternalNode) error {
+	gt *networkingv1beta1.GeneveTunnel, internalfabric *networkingv1beta1.InternalFabric) error {
 	if cc.HasSender(gt.Name) {
 		return nil
 	}

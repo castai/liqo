@@ -25,7 +25,6 @@ spec:
         metadata:
           {{- include "liqo.metadataTemplate" $templateConfig | nindent 10 }}
         spec:
-          replicas: {{ .Values.networking.gatewayTemplates.replicas }}
           strategy:
             type: Recreate
           selector:
@@ -91,7 +90,7 @@ spec:
                 {{- end }}
                 - --enable-nft-monitor={{ .Values.networking.gatewayTemplates.nftablesMonitor }}
                 - --enable-route-monitor={{ .Values.networking.gatewayTemplates.routeMonitor }}
-                - --enable-multipath-hash-policy={{ printf "{{ if gt (len .Spec.Endpoint.Ports) 1 }}true{{ else }}false{{ end }}" }}
+                - --enable-multipath-hash-policy=true
                 {{- if .Values.networking.gatewayTemplates.container.gateway.extraArgs }}
                 {{- toYaml .Values.networking.gatewayTemplates.container.gateway.extraArgs | nindent 16 }}
                 {{- end }}

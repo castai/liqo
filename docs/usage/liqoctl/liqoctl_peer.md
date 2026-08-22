@@ -75,6 +75,10 @@ liqoctl peer [flags]
 
 >Define the port used by the gateway client to connect to the gateway server. This value overrides the one automatically retrieved by Liqo and it is useful when the server is not directly reachable (e.g. the server is behind a NAT)
 
+`--gw-replicas` _int32_:
+
+>Number of active-active gateway replicas to create **(default 1)**
+
 `--gw-server-service-loadbalancerip` _string_:
 
 >IP of the LoadBalancer for the Gateway Server service
