@@ -24,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -384,7 +385,7 @@ func (r *WgGatewayServerReconciler) forgeEndpointStatusNodePort(ctx context.Cont
 	port := service.Spec.Ports[0].NodePort
 	protocol := &service.Spec.Ports[0].Protocol
 
-	pod, err := listActiveGatewayPod(ctx, r.Client, dep.Namespace)
+	pod, err := listActiveGatewayPod(ctx, r.Client, dep.Namespace, labels.SelectorFromSet(dep.Spec.Selector.MatchLabels))
 	if err != nil {
 		return nil, fmt.Errorf("retrieving active gateway pod: %w", err)
 	}
@@ -454,7 +455,7 @@ func (r *WgGatewayServerReconciler) handleInternalEndpointStatus(ctx context.Con
 		return nil
 	}
 
-	gwPod, err := listActiveGatewayPod(ctx, r.Client, dep.Namespace)
+	gwPod, err := listActiveGatewayPod(ctx, r.Client, dep.Namespace, labels.SelectorFromSet(dep.Spec.Selector.MatchLabels))
 	if err != nil {
 		return fmt.Errorf("retrieving active gateway pods: %w", err)
 	}

@@ -103,7 +103,17 @@ spec:
             - gatewayIP
             - interface
             type: object
+          status:
+            description: InternalFabricStatus defines the observed state of InternalFabric.
+            properties:
+              ecmpMark:
+                description: |-
+                  ECMPMark is the policy-routing fwmark assigned to this gateway for ECMP consistency.
+                  It is allocated by the controller and persisted here so it remains stable across reconnects.
+                type: integer
+            type: object
         type: object
     served: true
     storage: true
-    subresources: {}
+    subresources:
+      status: {}

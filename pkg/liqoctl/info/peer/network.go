@@ -166,21 +166,27 @@ func (nc *NetworkChecker) collectStatusInfo(clusterID liqov1beta1.ClusterID,
 
 // collectGatewayInfo collects the info about the local gateway connected to the peer cluster gateway.
 func (nc *NetworkChecker) collectGatewayInfo(ctx context.Context, cl client.Client, clusterID liqov1beta1.ClusterID, peerNetwork *Network) error {
-	gwServer, gwClient, err := getters.GetGatewaysByClusterID(ctx, cl, clusterID)
+	gwServerList, gwClientList, err := getters.GetGatewaysByClusterID(ctx, cl, clusterID)
 	if err != nil {
 		return err
 	}
 
+	hasServers := gwServerList != nil && len(gwServerList.Items) > 0
+	hasClients := gwClientList != nil && len(gwClientList.Items) > 0
+
 	switch {
-	case gwClient != nil && gwServer != nil:
-		return fmt.Errorf("multiple Gateways found")
-	case gwClient != nil:
+	case hasClients && hasServers:
+		return fmt.Errorf("both GatewayServer and GatewayClient found for cluster %s", clusterID)
+	case hasClients:
 		// We are reflecting the status of the peer cluster. So, if locally there is a client, the peer
-		// cluester has a server.
+		// cluster has a server. Use the first client's endpoint.
+		gwClient := &gwClientList.Items[0]
 		peerNetwork.Gateway.Role = GatewayServerType
 		peerNetwork.Gateway.Address = gwClient.Spec.Endpoint.Addresses
 		peerNetwork.Gateway.Port = gwClient.Spec.Endpoint.Port
-	case gwServer != nil:
+	case hasServers:
+		// Use the first server's endpoint.
+		gwServer := &gwServerList.Items[0]
 		peerNetwork.Gateway.Role = GatewayClientType
 		if gwServer.Status.Endpoint != nil {
 			peerNetwork.Gateway.Address = gwServer.Status.Endpoint.Addresses
