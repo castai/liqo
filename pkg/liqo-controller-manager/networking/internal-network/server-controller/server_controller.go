@@ -110,14 +110,9 @@ func (r *ServerReconciler) ensureInternalFabric(ctx context.Context, gwServer *n
 		return fmt.Errorf("internal endpoint not found for the gateway server %q", gwServer.Name)
 	}
 
-	internalFabricName, err := netutils.ForgeInternalFabricName(ctx, r.Client, &gwServer.ObjectMeta)
-	if err != nil {
-		return fmt.Errorf("unable to retrieve the cluster ID from the gateway server %q", gwServer.Name)
-	}
-
 	internalFabric := &networkingv1beta1.InternalFabric{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      internalFabricName,
+			Name:      gwServer.Name,
 			Namespace: gwServer.Namespace,
 		},
 	}
@@ -176,15 +171,18 @@ func (r *ServerReconciler) gatewayServerEnqueuerByRemoteID() handler.MapFunc {
 			return nil
 		}
 
-		gwServer, err := getters.GetGatewayServerByClusterID(ctx, r.Client, remoteClusterID, corev1.NamespaceAll)
+		gwServerList, err := getters.ListGatewayServersByClusterID(ctx, r.Client, remoteClusterID, corev1.NamespaceAll)
 		if err != nil {
-			if apierrors.IsNotFound(err) {
-				return nil
-			}
-			klog.Errorf("unable to get the gateway server for cluster %s: %s", remoteClusterID, err)
+			klog.Errorf("unable to list gateway servers for cluster %s: %s", remoteClusterID, err)
 			return nil
 		}
 
-		return []reconcile.Request{{NamespacedName: client.ObjectKeyFromObject(gwServer)}}
+		var requests []reconcile.Request
+		for i := range gwServerList.Items {
+			requests = append(requests, reconcile.Request{
+				NamespacedName: client.ObjectKeyFromObject(&gwServerList.Items[i]),
+			})
+		}
+		return requests
 	}
 }

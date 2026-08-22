@@ -69,6 +69,7 @@ spec:
           {{- end }}
           - --enable-nft-monitor={{ .Values.networking.fabric.config.nftablesMonitor }}
           - --enable-route-monitor={{ .Values.networking.fabric.config.routeMonitor }}
+          - --enable-multipath-hash-policy={{ .Values.networking.fabric.config.multipathHashPolicy }}
           {{- if .Values.common.globalAnnotations }}
           {{- $d := dict "commandName" "--global-annotations" "dictionary" .Values.common.globalAnnotations -}}
           {{- include "liqo.concatenateMap" $d | nindent 10 }}
