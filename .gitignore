@@ -51,6 +51,7 @@ docs/_build
 /tmp
 /graphviz
 /k3s-ansible
+.venv
 
 # claude
 .claude
