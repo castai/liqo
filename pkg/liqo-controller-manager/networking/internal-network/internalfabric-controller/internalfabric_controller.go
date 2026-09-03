@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"slices"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -27,13 +28,16 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	networkingv1beta1 "github.com/liqotech/liqo/apis/networking/v1beta1"
 	"github.com/liqotech/liqo/pkg/consts"
+	"github.com/liqotech/liqo/pkg/gateway"
 	"github.com/liqotech/liqo/pkg/gateway/forge"
 	"github.com/liqotech/liqo/pkg/liqo-controller-manager/networking/internal-network/id"
 )
@@ -67,6 +71,7 @@ func NewInternalFabricReconciler(cl client.Client, s *runtime.Scheme, routeConfi
 // +kubebuilder:rbac:groups=networking.liqo.io,resources=connections,verbs=get;list;watch
 // +kubebuilder:rbac:groups=networking.liqo.io,resources=firewallconfigurations,verbs=get;list;watch;delete;create;update;patch
 // +kubebuilder:rbac:groups=networking.liqo.io,resources=firewallconfigurations/finalizers,verbs=update
+// +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch
 
 // Reconcile manage InternalFabric lifecycle.
 func (r *InternalFabricReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -219,33 +224,62 @@ func (r *InternalFabricReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				gatewayNamespace = conn.Namespace
 			}
 
-			var internalFabricList networkingv1beta1.InternalFabricList
-			if err := r.List(ctx, &internalFabricList, client.InNamespace(gatewayNamespace)); err != nil {
-				klog.Errorf("Unable to list InternalFabrics: %s", err)
+			internalFabric := &networkingv1beta1.InternalFabric{}
+			if err := r.Get(ctx, types.NamespacedName{Namespace: gatewayNamespace, Name: conn.Spec.GatewayRef.Name}, internalFabric); err != nil {
+				if apierrors.IsNotFound(err) {
+					return nil
+				}
+				klog.Errorf("getting the InternalFabric %q/%q: %s", gatewayNamespace, conn.Spec.GatewayRef.Name, err)
 				return nil
 			}
 
-			var requests []reconcile.Request
-			for i := range internalFabricList.Items {
-				internalFabric := &internalFabricList.Items[i]
-				owner := metav1.GetControllerOf(internalFabric)
-				if owner == nil || owner.Name != conn.Spec.GatewayRef.Name {
-					continue
-				}
-
-				requests = append(requests, reconcile.Request{
+			return []reconcile.Request{
+				{
 					NamespacedName: client.ObjectKeyFromObject(internalFabric),
-				})
+				},
 			}
-
-			return requests
 		},
 	)
+
+	gatewayPodEnqueuer := handler.EnqueueRequestsFromMapFunc(
+		func(ctx context.Context, obj client.Object) []reconcile.Request {
+			pod, ok := obj.(*corev1.Pod)
+			if !ok {
+				return nil
+			}
+
+			gwName, ok := pod.Labels[consts.GatewayNameLabel]
+			if !ok {
+				return nil
+			}
+
+			internalFabric := &networkingv1beta1.InternalFabric{}
+			if err := r.Get(ctx, types.NamespacedName{Namespace: pod.Namespace, Name: gwName}, internalFabric); err != nil {
+				if apierrors.IsNotFound(err) {
+					return nil
+				}
+				klog.Errorf("Unable to get InternalFabric %q/%q: %s", pod.Namespace, gwName, err)
+				return nil
+			}
+
+			return []reconcile.Request{
+				{
+					NamespacedName: client.ObjectKeyFromObject(internalFabric),
+				},
+			}
+		},
+	)
+
+	gatewayPodPredicate := predicate.NewPredicateFuncs(func(obj client.Object) bool {
+		labels := obj.GetLabels()
+		return labels[consts.NetworkingComponentKey] == gateway.GatewayComponentGateway && labels[consts.GatewayNameLabel] != ""
+	})
 
 	return ctrl.NewControllerManagedBy(mgr).Named(consts.CtrlInternalFabricCM).
 		For(&networkingv1beta1.InternalFabric{}).
 		Watches(&networkingv1beta1.InternalNode{}, internalNodeEnqueuer).
 		Watches(&networkingv1beta1.Connection{}, connectionEnqueuer).
+		Watches(&corev1.Pod{}, gatewayPodEnqueuer, builder.WithPredicates(gatewayPodPredicate)).
 		Owns(&networkingv1beta1.RouteConfiguration{}).
 		Owns(&networkingv1beta1.GeneveTunnel{}).
 		Complete(r)
@@ -283,7 +317,7 @@ func (r *InternalFabricReconciler) listSiblingInternalFabrics(ctx context.Contex
 }
 
 // connectedGateways returns the subset of sibling InternalFabrics whose related Connection resource is in Connected state,
-// along with a boolean indicating whether the provided InternalFabric itself is connected.
+// and whose gateway pod is currently running, along with a boolean indicating whether the provided InternalFabric itself is connected.
 func (r *InternalFabricReconciler) connectedGateways(ctx context.Context,
 	internalFabric *networkingv1beta1.InternalFabric, fabrics []networkingv1beta1.InternalFabric) ([]networkingv1beta1.InternalFabric, bool, error) {
 	if _, ok := gatewayNameFromOwnerRef(internalFabric); !ok {
@@ -314,18 +348,52 @@ func (r *InternalFabricReconciler) connectedGateways(ctx context.Context,
 				internalFabric.Namespace, connectionName, err)
 		}
 
-		if connection.Status.Value == networkingv1beta1.Connected {
-			connected = append(connected, *fabric)
-			if fabric.Name == currentName {
-				currentConnected = true
-			}
-		} else {
+		if connection.Status.Value != networkingv1beta1.Connected {
 			klog.V(4).Infof("Connection %q/%q status is %q, skipping fabric %q",
 				internalFabric.Namespace, connectionName, connection.Status.Value, gwName)
+			continue
+		}
+
+		running, err := r.gatewayPodRunning(ctx, fabric)
+		if err != nil {
+			return nil, false, fmt.Errorf("checking gateway pod for fabric %q: %w", gwName, err)
+		}
+
+		if !running {
+			klog.V(4).Infof("Gateway pod for fabric %q is not running, skipping fabric", gwName)
+			continue
+		}
+
+		connected = append(connected, *fabric)
+		if fabric.Name == currentName {
+			currentConnected = true
 		}
 	}
 
 	return connected, currentConnected, nil
+}
+
+// gatewayPodRunning returns true if there is at least one running gateway pod for the given InternalFabric.
+func (r *InternalFabricReconciler) gatewayPodRunning(ctx context.Context,
+	internalFabric *networkingv1beta1.InternalFabric) (bool, error) {
+	gwName := gatewayNameFromInternalFabric(internalFabric)
+
+	var podList corev1.PodList
+	if err := r.List(ctx, &podList, client.InNamespace(internalFabric.Namespace), client.MatchingLabels{
+		consts.NetworkingComponentKey: gateway.GatewayComponentGateway,
+		consts.GatewayNameLabel:       gwName,
+	}); err != nil {
+		return false, fmt.Errorf("listing gateway pods for %q: %w", gwName, err)
+	}
+
+	for i := range podList.Items {
+		pod := &podList.Items[i]
+		if pod.DeletionTimestamp.IsZero() && pod.Status.Phase == corev1.PodRunning && pod.Status.PodIP != "" {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
 
 // gatewayNameFromInternalFabric returns the gateway name from the InternalFabric's controller owner reference,
