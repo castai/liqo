@@ -42,7 +42,8 @@ func generateRouteConfigurationName(remoteClusterID string) string {
 }
 
 func (r *InternalFabricReconciler) ensureRouteConfiguration(ctx context.Context,
-	internalFabric *networkingv1beta1.InternalFabric, siblings []networkingv1beta1.InternalFabric) error {
+	internalFabric *networkingv1beta1.InternalFabric, siblings []networkingv1beta1.InternalFabric,
+	connected []networkingv1beta1.InternalFabric) error {
 	if internalFabric.Spec.Interface.Node.Name == "" {
 		return fmt.Errorf("internal fabric %q has node interface name empty", client.ObjectKeyFromObject(internalFabric))
 	}
@@ -52,19 +53,13 @@ func (r *InternalFabricReconciler) ensureRouteConfiguration(ctx context.Context,
 		return fmt.Errorf("InternalFabric %q does not have a remote-cluster-id label", internalFabric.Name)
 	}
 
-	// Filter by Connection status: only connected gateways participate in ECMP next-hops.
-	connected, _, err := r.connectedGateways(ctx, internalFabric, siblings)
-	if err != nil {
-		return fmt.Errorf("filtering connected gateways: %w", err)
-	}
-
 	route := &networkingv1beta1.RouteConfiguration{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      generateRouteConfigurationName(remoteClusterID),
 			Namespace: internalFabric.Namespace,
 		},
 	}
-	_, err = resource.CreateOrUpdate(ctx, r.Client, route, func() error {
+	_, err := resource.CreateOrUpdate(ctx, r.Client, route, func() error {
 		// Forge metadata
 		if route.Labels == nil {
 			route.Labels = make(labels.Set)

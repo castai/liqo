@@ -111,7 +111,12 @@ func (r *InternalFabricReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	// route configuration
 
-	if err := r.ensureRouteConfiguration(ctx, internalFabric, siblings); err != nil {
+	connected, currentConnected, err := r.connectedGateways(ctx, internalFabric, siblings)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("filtering connected gateways: %w", err)
+	}
+
+	if err := r.ensureRouteConfiguration(ctx, internalFabric, siblings, connected); err != nil {
 		return ctrl.Result{}, fmt.Errorf("ensuring route configuration: %w", err)
 	}
 
@@ -119,11 +124,6 @@ func (r *InternalFabricReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// - Only needed when ECMP is active (multiple connected gateways).
 	// - Must be removed for disconnected gateways so that restored conntrack marks
 	//   do not keep steering traffic to a dead tunnel.
-	connected, currentConnected, err := r.connectedGateways(ctx, internalFabric, siblings)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("filtering connected gateways: %w", err)
-	}
-
 	if len(connected) > 1 && currentConnected {
 		if err := r.ensurePerGatewayReturnRouteConfiguration(ctx, internalFabric); err != nil {
 			return ctrl.Result{}, fmt.Errorf("ensuring per-gateway return route configuration: %w", err)
