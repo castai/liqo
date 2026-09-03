@@ -53,7 +53,7 @@ func (r *InternalFabricReconciler) ensureRouteConfiguration(ctx context.Context,
 	}
 
 	// Filter by Connection status: only connected gateways participate in ECMP next-hops.
-	connected, err := r.connectedGateways(ctx, internalFabric, siblings)
+	connected, _, err := r.connectedGateways(ctx, internalFabric, siblings)
 	if err != nil {
 		return fmt.Errorf("filtering connected gateways: %w", err)
 	}

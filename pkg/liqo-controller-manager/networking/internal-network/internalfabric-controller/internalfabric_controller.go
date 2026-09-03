@@ -115,8 +115,16 @@ func (r *InternalFabricReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, fmt.Errorf("ensuring route configuration: %w", err)
 	}
 
-	// Per-gateway return-path route configuration: only needed when ECMP is used (multiple siblings).
-	if len(siblings) > 1 {
+	// Per-gateway return-path route configuration:
+	// - Only needed when ECMP is active (multiple connected gateways).
+	// - Must be removed for disconnected gateways so that restored conntrack marks
+	//   do not keep steering traffic to a dead tunnel.
+	connected, currentConnected, err := r.connectedGateways(ctx, internalFabric, siblings)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("filtering connected gateways: %w", err)
+	}
+
+	if len(connected) > 1 && currentConnected {
 		if err := r.ensurePerGatewayReturnRouteConfiguration(ctx, internalFabric); err != nil {
 			return ctrl.Result{}, fmt.Errorf("ensuring per-gateway return route configuration: %w", err)
 		}
@@ -274,16 +282,19 @@ func (r *InternalFabricReconciler) listSiblingInternalFabrics(ctx context.Contex
 	return result, nil
 }
 
-// connectedGateways returns the subset of sibling InternalFabrics whose related Connection resource is in Connected state.
+// connectedGateways returns the subset of sibling InternalFabrics whose related Connection resource is in Connected state,
+// along with a boolean indicating whether the provided InternalFabric itself is connected.
 func (r *InternalFabricReconciler) connectedGateways(ctx context.Context,
-	internalFabric *networkingv1beta1.InternalFabric, fabrics []networkingv1beta1.InternalFabric) ([]networkingv1beta1.InternalFabric, error) {
+	internalFabric *networkingv1beta1.InternalFabric, fabrics []networkingv1beta1.InternalFabric) ([]networkingv1beta1.InternalFabric, bool, error) {
 	if _, ok := gatewayNameFromOwnerRef(internalFabric); !ok {
 		klog.V(4).Infof("InternalFabric %q has no gateway owner reference, cannot filter by Connection state",
 			client.ObjectKeyFromObject(internalFabric))
-		return fabrics, nil
+		return fabrics, true, nil
 	}
 
 	connected := make([]networkingv1beta1.InternalFabric, 0, len(fabrics))
+	currentConnected := false
+	currentName := internalFabric.Name
 	for i := range fabrics {
 		fabric := &fabrics[i]
 		gwName := gatewayNameFromInternalFabric(fabric)
@@ -299,19 +310,22 @@ func (r *InternalFabricReconciler) connectedGateways(ctx context.Context,
 					internalFabric.Namespace, connectionName, gwName)
 				continue
 			}
-			return nil, fmt.Errorf("getting Connection %q/%q: %w",
+			return nil, false, fmt.Errorf("getting Connection %q/%q: %w",
 				internalFabric.Namespace, connectionName, err)
 		}
 
 		if connection.Status.Value == networkingv1beta1.Connected {
 			connected = append(connected, *fabric)
+			if fabric.Name == currentName {
+				currentConnected = true
+			}
 		} else {
 			klog.V(4).Infof("Connection %q/%q status is %q, skipping fabric %q",
 				internalFabric.Namespace, connectionName, connection.Status.Value, gwName)
 		}
 	}
 
-	return connected, nil
+	return connected, currentConnected, nil
 }
 
 // gatewayNameFromInternalFabric returns the gateway name from the InternalFabric's controller owner reference,
