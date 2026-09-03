@@ -34,6 +34,7 @@ Run the script from a shell inside iTerm2:
 
 ```bash
 ./hack/multi-gw-debug/debug-multi-gw.sh <mode> <context-1> <context-2>
+./hack/multi-gw-debug/debug-multi-gw.sh custom <command> <context-1> <context-2>
 ```
 
 On first run the script creates a Python virtual environment under
@@ -44,11 +45,13 @@ Supported modes:
 
 - `http-summary` — runs `tcpdump-http-summary.sh` on each gateway pod.
 - `traffic-amount` — runs `tcpdump-traffic-amount.sh` on each gateway pod.
+- `custom` — runs the provided shell command in each gateway pod terminal.
 
-Example:
+Examples:
 
 ```bash
 ./hack/multi-gw-debug/debug-multi-gw.sh http-summary kind-cl01 kind-cl02
+./hack/multi-gw-debug/debug-multi-gw.sh custom "tcpdump -i any port 443" kind-cl01 kind-cl02
 ```
 
 ## What it does

@@ -16,9 +16,11 @@ import iterm2
 
 def usage() -> None:
     print(
-        "Usage: iterm-layout.py <mode> <ctx1> <ctx2> <pods1> <pods2> <script_path>",
+        "Usage: iterm-layout.py <mode> <ctx1> <ctx2> <pods1> <pods2> <target>",
         file=sys.stderr,
     )
+    print("  mode: http-summary | traffic-amount | custom", file=sys.stderr)
+    print("  target: script path for built-in modes, shell command for custom", file=sys.stderr)
     print("  pods1/pods2 are comma-separated lists of namespace/name values.", file=sys.stderr)
 
 
@@ -26,19 +28,26 @@ def parse_pods(value: str) -> list[str]:
     return [p for p in value.split(",") if p]
 
 
-def build_command(ctx: str, pod: str, script_path: str) -> str:
+def build_command(ctx: str, pod: str, mode: str, target: str) -> str:
     ns, name = pod.split("/", 1)
-    script_name = os.path.basename(script_path)
-    remote_path = f"/tmp/{script_name}"
 
-    # Clear the terminal (fallback to ANSI escape if clear is unavailable)
-    # and run the copied script with /bin/sh so execute permissions are not
-    # strictly required.
-    inner_command = f"clear 2>/dev/null || printf '\\033[2J\\033[H'; sh {remote_path}"
+    # Clear the terminal (fallback to ANSI escape if clear is unavailable).
+    clear_command = "clear 2>/dev/null || printf '\\033[2J\\033[H'"
+
+    if mode == "custom":
+        inner_command = f"{clear_command}; {target}"
+        copy_prefix = ""
+    else:
+        script_name = os.path.basename(target)
+        remote_path = f"/tmp/{script_name}"
+        inner_command = f"{clear_command}; sh {remote_path}"
+        copy_prefix = (
+            f"kubectl --context {shlex.quote(ctx)} cp {shlex.quote(target)} "
+            f"{shlex.quote(ns)}/{shlex.quote(name)}:{remote_path} && "
+        )
 
     return (
-        f"kubectl --context {shlex.quote(ctx)} cp {shlex.quote(script_path)} "
-        f"{shlex.quote(ns)}/{shlex.quote(name)}:{remote_path} && "
+        f"{copy_prefix}"
         f"kubectl --context {shlex.quote(ctx)} -n {shlex.quote(ns)} "
         f"exec -it {shlex.quote(name)} -- "
         f"/bin/sh -c {shlex.quote(inner_command)}\n"
@@ -91,11 +100,12 @@ async def main(connection: iterm2.Connection) -> None:
         sys.exit(1)
 
     _mode = sys.argv[1]
+    mode = sys.argv[1]
     ctx1 = sys.argv[2]
     ctx2 = sys.argv[3]
     pods1 = parse_pods(sys.argv[4])
     pods2 = parse_pods(sys.argv[5])
-    script_path = sys.argv[6]
+    target = sys.argv[6]
 
     if not pods1 and not pods2:
         print("No gateway pods to debug.", file=sys.stderr)
@@ -130,10 +140,10 @@ async def main(connection: iterm2.Connection) -> None:
     await asyncio.sleep(0.5)
 
     for i, pod in enumerate(pods1):
-        await sessions_col1[i].async_send_text(build_command(ctx1, pod, script_path))
+        await sessions_col1[i].async_send_text(build_command(ctx1, pod, mode, target))
 
     for i, pod in enumerate(pods2):
-        await sessions_col2[i].async_send_text(build_command(ctx2, pod, script_path))
+        await sessions_col2[i].async_send_text(build_command(ctx2, pod, mode, target))
 
 
 iterm2.run_until_complete(main)
