@@ -33,14 +33,16 @@ import (
 	"github.com/liqotech/liqo/pkg/conncheck"
 	"github.com/liqotech/liqo/pkg/gateway"
 	gwfabric "github.com/liqotech/liqo/pkg/gateway/fabric"
+	"github.com/liqotech/liqo/pkg/gateway/leaderelection"
 	flagsutils "github.com/liqotech/liqo/pkg/utils/flags"
 	"github.com/liqotech/liqo/pkg/utils/mapper"
 	"github.com/liqotech/liqo/pkg/utils/restcfg"
 )
 
 var (
-	scheme  = runtime.NewScheme()
-	options = gwfabric.NewOptions(gateway.NewOptions(), conncheck.NewOptions())
+	scheme           = runtime.NewScheme()
+	options          = gwfabric.NewOptions(gateway.NewOptions(), conncheck.NewOptions())
+	leaderMarkerPath string
 )
 
 func init() {
@@ -61,6 +63,8 @@ func main() {
 	conncheck.InitFlags(cmd.Flags(), options.ConnCheckOptions)
 
 	gateway.InitFlags(cmd.Flags(), options.GwOptions)
+	cmd.Flags().StringVar(&leaderMarkerPath, "leader-marker-path", leaderelection.DefaultLeaderMarkerPath,
+		"Path of the marker file created by the wireguard container when this pod becomes the leader")
 	if err := gateway.MarkFlagsRequired(&cmd); err != nil {
 		klog.Error(err)
 		os.Exit(1)
@@ -77,6 +81,13 @@ func run(cmd *cobra.Command, _ []string) error {
 
 	// Set controller-runtime logger.
 	log.SetLogger(klog.NewKlogr())
+
+	// Wait for the wireguard container to become leader and create the marker file.
+	klog.Infof("Waiting for leader marker file %q", leaderMarkerPath)
+	if err := leaderelection.WaitForMarkerFile(cmd.Context(), leaderMarkerPath, leaderelection.DefaultPollInterval); err != nil {
+		return fmt.Errorf("waiting for leader marker file: %w", err)
+	}
+	klog.Infof("Leader marker file found, starting geneve container")
 
 	// Get the rest config.
 	cfg := config.GetConfigOrDie()
@@ -99,7 +110,7 @@ func run(cmd *cobra.Command, _ []string) error {
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		return fmt.Errorf("unable to set up healthz probe: %w", err)
 	}
-	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
+	if err := mgr.AddReadyzCheck("readyz", leaderelection.ReadyzCheck(leaderMarkerPath)); err != nil {
 		return fmt.Errorf("unable to set up readyz probe: %w", err)
 	}
 

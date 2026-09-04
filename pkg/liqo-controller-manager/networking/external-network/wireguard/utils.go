@@ -35,6 +35,7 @@ import (
 	"github.com/liqotech/liqo/pkg/consts"
 	"github.com/liqotech/liqo/pkg/gateway"
 	"github.com/liqotech/liqo/pkg/gateway/forge"
+	"github.com/liqotech/liqo/pkg/gateway/leaderelection"
 	"github.com/liqotech/liqo/pkg/gateway/tunnel/wireguard"
 	liqolabels "github.com/liqotech/liqo/pkg/utils/labels"
 )
@@ -247,7 +248,16 @@ func getWireGuardSecret(ctx context.Context, cl client.Client, wgObj metav1.Obje
 }
 
 func listActiveGatewayPod(ctx context.Context, cl client.Client, namespace string, selector labels.Selector) (*corev1.Pod, error) {
-	podsSelector := client.MatchingLabelsSelector{Selector: selector}
+	// Consider only pods that have been labeled as the current leader by the
+	// gateway leader election process.
+	leaderSelector := labels.SelectorFromSet(labels.Set{
+		leaderelection.LeaderLabelKey: leaderelection.LeaderLabelValue,
+	})
+	if selector != nil {
+		requirements, _ := selector.Requirements()
+		leaderSelector = leaderSelector.Add(requirements...)
+	}
+	podsSelector := client.MatchingLabelsSelector{Selector: leaderSelector}
 	var podList corev1.PodList
 	if err := cl.List(ctx, &podList, client.InNamespace(namespace), podsSelector); err != nil {
 		klog.Errorf("Unable to list active gateway pods in namespace %q: %v", namespace, err)

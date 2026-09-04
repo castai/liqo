@@ -26,7 +26,10 @@ spec:
           {{- include "liqo.metadataTemplate" $templateConfig | nindent 10 }}
         spec:
           strategy:
-            type: Recreate
+            type: RollingUpdate
+            rollingUpdate:
+              maxUnavailable: 0
+              maxSurge: 1
           selector:
             matchLabels:
               {{- include "liqo.selectorTemplate" $templateConfig | nindent 14 }}
@@ -69,6 +72,7 @@ spec:
                 - --pod-name={{"$(POD_NAME)"}}
                 - --gateway-uid={{"{{ .GatewayUID }}"}}
                 - --mode=client
+                - --leader-marker-path=/run/liqo-gateway/leader
                 {{- if .Values.common.globalAnnotations }}
                 {{- $d := dict "commandName" "--global-annotations" "dictionary" .Values.common.globalAnnotations -}}
                 {{- include "liqo.concatenateMap" $d | nindent 16 }}
@@ -107,6 +111,9 @@ spec:
                 #  httpGet:
                 #    path: /readyz
                 #    port: healthz
+                volumeMounts:
+                - name: liqo-gateway-leader
+                  mountPath: /run/liqo-gateway
                 env:
                 - name: NODE_NAME
                   valueFrom:
@@ -143,6 +150,11 @@ spec:
                 {{- end }}
                 - --health-probe-bind-address=:8085
                 - --implementation={{ .Values.networking.gatewayTemplates.wireguard.implementation }}
+                - --leader-marker-path=/run/liqo-gateway/leader
+                - --pod-name={{"$(POD_NAME)"}}
+                - --leader-lease-duration=5s
+                - --leader-renew-deadline=3s
+                - --leader-retry-period=1s
                 ports:
                 {{- if .Values.metrics.enabled }}
                 - containerPort: 8084
@@ -156,6 +168,16 @@ spec:
                 #  httpGet:
                 #    path: /readyz
                 #    port: healthz
+                volumeMounts:
+                - name: wireguard-config
+                  mountPath: /etc/wireguard/keys
+                - name: liqo-gateway-leader
+                  mountPath: /run/liqo-gateway
+                env:
+                - name: POD_NAME
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.name
                 securityContext:
                   capabilities:
                     add:
@@ -165,9 +187,6 @@ spec:
                   {{ if .Values.networking.gatewayTemplates.wireguard.implementation | eq "userspace" }}
                   privileged: true
                   {{ end }}
-                volumeMounts:
-                - name: wireguard-config
-                  mountPath: /etc/wireguard/keys
               - name: geneve
                 image: {{ .Values.networking.gatewayTemplates.container.geneve.image.name }}{{ include "liqo.suffix" $geneveConfig }}:{{ include "liqo.version" $geneveConfig }}
                 imagePullPolicy: {{ .Values.pullPolicy }}
@@ -190,6 +209,7 @@ spec:
                 - --metrics-address=:8086
                 {{- end }}
                 - --health-probe-bind-address=:8087
+                - --leader-marker-path=/run/liqo-gateway/leader
                 ports:
                 {{- if .Values.metrics.enabled }}
                 - containerPort: 8086
@@ -197,12 +217,9 @@ spec:
                 {{- end }}
                 - containerPort: 8087
                   name: healthz
-                # ATTENTION: uncomment the readinessProbe section if you are aware of the consequences.
-                # If you have more replicas of the same gateway, the passive ones will not reach the ready state.
-                #readinessProbe:
-                #  httpGet:
-                #    path: /readyz
-                #    port: healthz
+                volumeMounts:
+                - name: liqo-gateway-leader
+                  mountPath: /run/liqo-gateway
                 env:
                 - name: NODE_NAME
                   valueFrom:
@@ -224,4 +241,6 @@ spec:
               - name: wireguard-config
                 secret:
                   secretName: "{{"{{ .SecretName }}"}}"
+              - name: liqo-gateway-leader
+                emptyDir: {}
 {{- end }}

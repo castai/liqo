@@ -107,6 +107,9 @@ app.kubernetes.io/managed-by: {{ quote .Release.Service }}
 networking.liqo.io/component: "gateway"
 networking.liqo.io/gateway-name: "{{"{{ .Name }}"}}"
 networking.liqo.io/gateway-namespace: "{{"{{ .Namespace }}"}}"
+{{- if .isService }}
+networking.liqo.io/active: "true"
+{{- end }}
 {{- end }}
 
 {{/*

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package wireguard contains the logic to configure the Wireguard interface.
+// Package main contains the logic to run the gateway container.
 package main
 
 import (
@@ -37,6 +37,7 @@ import (
 	"github.com/liqotech/liqo/pkg/firewall"
 	"github.com/liqotech/liqo/pkg/gateway"
 	"github.com/liqotech/liqo/pkg/gateway/connection"
+	"github.com/liqotech/liqo/pkg/gateway/leaderelection"
 	"github.com/liqotech/liqo/pkg/gateway/tunnel"
 	"github.com/liqotech/liqo/pkg/liqo-controller-manager/networking/external-network/remapping"
 	"github.com/liqotech/liqo/pkg/route"
@@ -54,6 +55,8 @@ var (
 	scheme            = runtime.NewScheme()
 	globalLabels      argsutils.StringMap
 	globalAnnotations argsutils.StringMap
+
+	leaderMarkerPath string
 )
 
 func init() {
@@ -87,6 +90,10 @@ func main() {
 	// Register the flags for setting global labels and annotations
 	cmd.Flags().Var(&globalLabels, "global-labels", "Global labels to be added to all created resources (key=value)")
 	cmd.Flags().Var(&globalAnnotations, "global-annotations", "Global annotations to be added to all created resources (key=value)")
+
+	// Register the flag for the marker file created by the wireguard container.
+	cmd.Flags().StringVar(&leaderMarkerPath, "leader-marker-path", leaderelection.DefaultLeaderMarkerPath,
+		"Path of the marker file created by the wireguard container when this pod is the leader")
 
 	if err := cmd.Execute(); err != nil {
 		klog.Error(err)
@@ -123,6 +130,13 @@ func run(cmd *cobra.Command, _ []string) error {
 	// Set controller-runtime logger.
 	log.SetLogger(klog.NewKlogr())
 
+	// Wait for the wireguard container to become leader and create the marker file.
+	klog.Infof("Waiting for leader marker file %q", leaderMarkerPath)
+	if err := leaderelection.WaitForMarkerFile(cmd.Context(), leaderMarkerPath, leaderelection.DefaultPollInterval); err != nil {
+		return fmt.Errorf("waiting for leader marker file: %w", err)
+	}
+	klog.Infof("Leader marker file found, starting gateway container")
+
 	// Initialize global labels from flag
 	resource.SetGlobalLabels(globalLabels.StringMap)
 	resource.SetGlobalAnnotations(globalAnnotations.StringMap)
@@ -148,7 +162,7 @@ func run(cmd *cobra.Command, _ []string) error {
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		return fmt.Errorf("unable to set up healthz probe: %w", err)
 	}
-	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
+	if err := mgr.AddReadyzCheck("readyz", leaderelection.ReadyzCheck(leaderMarkerPath)); err != nil {
 		return fmt.Errorf("unable to set up readyz probe: %w", err)
 	}
 
