@@ -227,6 +227,24 @@ func (r *ClientReconciler) EnsureGatewayClient(ctx context.Context, gwClient *ne
 
 		resource.AddGlobalAnnotations(objChild)
 
+		// Stamp the source template identity on the rendered WgGatewayClient so
+		// that peer gateway controllers can filter and compare template revisions
+		// without depending on instance-specific rendered fields.
+		labels := objChild.GetLabels()
+		if labels == nil {
+			labels = map[string]string{}
+		}
+		labels[consts.TemplateNameLabelKey] = template.GetName()
+		labels[consts.TemplateNamespaceLabelKey] = template.GetNamespace()
+		objChild.SetLabels(labels)
+
+		annotations := objChild.GetAnnotations()
+		if annotations == nil {
+			annotations = map[string]string{}
+		}
+		annotations[consts.TemplateGenerationAnnotationKey] = fmt.Sprintf("%d", template.GetGeneration())
+		objChild.SetAnnotations(annotations)
+
 		objChild.SetOwnerReferences([]metav1.OwnerReference{
 			{
 				APIVersion: gwClient.APIVersion,

@@ -47,6 +47,14 @@ const (
 	// NetworkingComponentKey is the label assigned to the Liqo components related to networking.
 	NetworkingComponentKey = "networking.liqo.io/component"
 
+	// TemplateNameLabelKey is the label used to identify the source template name
+	// of a gateway Deployment. It is used by the serialization gate to filter peers
+	// that share the same template.
+	TemplateNameLabelKey = "networking.liqo.io/template-name"
+	// TemplateNamespaceLabelKey is the label used to identify the source template
+	// namespace of a gateway Deployment. Template names are not unique across namespaces.
+	TemplateNamespaceLabelKey = "networking.liqo.io/template-namespace"
+
 	// WebhookResourceLabelKey is the constant representing
 	// the key of the label assigned to all Webhook resources.
 	WebhookResourceLabelKey = "liqo.io/webhook"

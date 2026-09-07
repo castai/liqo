@@ -63,4 +63,9 @@ const (
 	// ProvisionPVCOnAllEdgesAnnotationValue is the value to set on the ProvisionPVCOnAllEdgesAnnotationKey annotation
 	// to enable the provisioning of a PVC on all edge nodes.
 	ProvisionPVCOnAllEdgesAnnotationValue = "true"
+
+	// TemplateGenerationAnnotationKey is the annotation used to stamp the source
+	// template generation on gateway Deployments. It is used by the serialization
+	// gate to decide which peers still need to roll out.
+	TemplateGenerationAnnotationKey = "networking.liqo.io/template-generation"
 )

@@ -186,6 +186,34 @@ func (r *WgGatewayClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, err
 	}
 
+	// If the deployment already exists and its desired spec differs from the
+	// current one, check the serialization gate before triggering a rolling update.
+	// This ensures only one gateway Deployment per remote cluster rolls at a time.
+	if deploy != nil {
+		desired := deploy.DeepCopy()
+		if err := r.mutateFnWgClientDeployment(desired, wgClient); err != nil {
+			return ctrl.Result{}, fmt.Errorf("computing desired deployment %q: %w", deployNsName, err)
+		}
+
+		if isDeploymentUpdateNeeded(deploy, desired) {
+			remoteClusterID, _ := getRemoteClusterID(deploy)
+			desiredTemplateName := wgClient.GetLabels()[consts.TemplateNameLabelKey]
+			desiredTemplateNamespace := wgClient.GetLabels()[consts.TemplateNamespaceLabelKey]
+			desiredGeneration := wgClient.GetAnnotations()[consts.TemplateGenerationAnnotationKey]
+			delay, reason, err := ShouldDelayRollout(ctx, r.Client, remoteClusterID,
+				types.NamespacedName{Namespace: deploy.Namespace, Name: deploy.Name},
+				desiredTemplateName, desiredTemplateNamespace, desiredGeneration)
+			if err != nil {
+				return ctrl.Result{}, fmt.Errorf("checking rollout gate for %q: %w", deployNsName, err)
+			}
+			if delay {
+				r.eventRecorder.Eventf(wgClient, corev1.EventTypeNormal, "DeploymentUpdateDelayed",
+					"Deployment update delayed: %s", reason)
+				return ctrl.Result{RequeueAfter: DefaultRolloutRequeueInterval}, nil
+			}
+		}
+	}
+
 	// Ensure deployment (create or update)
 	_, err = r.ensureDeployment(ctx, wgClient, deployNsName)
 	if err != nil {
@@ -246,6 +274,28 @@ func (r *WgGatewayClientReconciler) mutateFnWgClientDeployment(deployment *appsv
 
 	// Forge spec
 	deployment.Spec = wgClient.Spec.Deployment.Spec
+
+	// The label selector in ShouldDelayRollout uses them to consider only peers
+	// that originate from the same template.
+	if deployment.Labels == nil {
+		deployment.Labels = map[string]string{}
+	}
+	if templateName := wgClient.GetLabels()[consts.TemplateNameLabelKey]; templateName != "" {
+		deployment.Labels[consts.TemplateNameLabelKey] = templateName
+	}
+	if templateNamespace := wgClient.GetLabels()[consts.TemplateNamespaceLabelKey]; templateNamespace != "" {
+		deployment.Labels[consts.TemplateNamespaceLabelKey] = templateNamespace
+	}
+
+	// Stamp the desired template generation so that peer controllers can detect
+	// whether this Deployment has already rolled to the current template revision.
+	if deployment.Annotations == nil {
+		deployment.Annotations = map[string]string{}
+	}
+
+	if templateGeneration := wgClient.GetAnnotations()[consts.TemplateGenerationAnnotationKey]; templateGeneration != "" {
+		deployment.Annotations[consts.TemplateGenerationAnnotationKey] = templateGeneration
+	}
 
 	if wgClient.Status.SecretRef != nil {
 		// When no secret reference is provided, we will need to replace the secret name in the deployment manifest with the auto-generated one.
