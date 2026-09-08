@@ -63,4 +63,9 @@ const (
 	// ProvisionPVCOnAllEdgesAnnotationValue is the value to set on the ProvisionPVCOnAllEdgesAnnotationKey annotation
 	// to enable the provisioning of a PVC on all edge nodes.
 	ProvisionPVCOnAllEdgesAnnotationValue = "true"
+
+	// SkipVkDeploymentAnnotation is the annotation used to signal that the virtual-kubelet
+	// deployment (and its supporting resources) must not be created by the controller,
+	// as it is managed externally.
+	SkipVkDeploymentAnnotation = "liqo.io/skip-vk-deployment"
 )
