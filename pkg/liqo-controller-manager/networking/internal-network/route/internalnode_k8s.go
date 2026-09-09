@@ -73,6 +73,29 @@ func enforceRouteWithConntrackPresence(ctx context.Context, cl client.Client,
 
 func enforceRouteWithConntrackAbsence(ctx context.Context, cl client.Client,
 	internalnode *networkingv1beta1.InternalNode, opts *Options) error {
+	// We don't need to clean routeconfigurations since they have an owner reference on the node.
+	return cleanNodePortFirewallConfiguration(ctx, cl, internalnode, opts)
+}
+
+func enforceNodePortSupportAbsence(ctx context.Context, cl client.Client,
+	internalnode *networkingv1beta1.InternalNode, opts *Options) error {
+	// Explicitly delete the per-node route configuration: owner references are only garbage-collected
+	// when the InternalNode is deleted, not when nodeport support is disabled cluster-wide.
+	routecfg := &networkingv1beta1.RouteConfiguration{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      generateInternalNodeSvcRouteConfigurationName(internalnode.Name),
+			Namespace: opts.Namespace,
+		},
+	}
+	if err := cl.Delete(ctx, routecfg); err != nil && !k8serrors.IsNotFound(err) {
+		return fmt.Errorf("deleting route configuration %q: %w", routecfg.Name, err)
+	}
+
+	return cleanNodePortFirewallConfiguration(ctx, cl, internalnode, opts)
+}
+
+func cleanNodePortFirewallConfiguration(ctx context.Context, cl client.Client,
+	internalnode *networkingv1beta1.InternalNode, opts *Options) error {
 	fwcfg := &networkingv1beta1.FirewallConfiguration{}
 
 	err := cl.Get(ctx, client.ObjectKey{Name: configurationNameSvc, Namespace: opts.Namespace}, fwcfg)
@@ -94,7 +117,6 @@ func enforceRouteWithConntrackAbsence(ctx context.Context, cl client.Client,
 		return fmt.Errorf("deleting firewall configuration %q: %w", fwcfg.Name, err)
 	}
 
-	// We don't need to clean routeconfigurations since they have an owner reference on the node.
 	return nil
 }
 

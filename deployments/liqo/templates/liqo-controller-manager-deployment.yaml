@@ -89,6 +89,7 @@ spec:
           {{- end }}
           - --fabric-route-rule-priority={{ .Values.networking.fabric.config.routeConfigurationRulePriority }}
           - --fabric-full-masquerade-enabled={{ .Values.networking.fabric.config.fullMasquerade }}
+          - --node-port-support-enabled={{ .Values.networking.nodePort.enabled }}
           - --gateway-masquerade-bypass-enabled={{ .Values.networking.fabric.config.gatewayMasqueradeBypass }}
           - --gateway-template-watch-enabled={{ .Values.networking.gateway.gatewayTemplateWatchEnabled }}
           - --geneve-port={{ .Values.networking.genevePort }}
