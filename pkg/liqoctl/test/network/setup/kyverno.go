@@ -28,10 +28,21 @@ import (
 	"github.com/liqotech/liqo/pkg/liqoctl/test/network/flags"
 )
 
+const (
+	// kyvernoPolicyVersion is the API version used for Kyverno MutatingAdmissionPolicy-based policies.
+	kyvernoPolicyVersion = "v1"
+	// kyvernoExpressionKey is the key used for CEL expression fields in Kyverno policies.
+	kyvernoExpressionKey = "expression"
+)
+
 // KyvernoPolicyGroupVersionResource specifies the group version resource used to register the objects.
 // This API is available starting from Kyverno v1.13 (MutatingAdmissionPolicy-based NamespacedMutatingPolicy).
 // Older Kyverno releases do not expose this resource and are not supported by the network tests.
-var KyvernoPolicyGroupVersionResource = schema.GroupVersionResource{Group: "policies.kyverno.io", Version: "v1", Resource: "namespacedmutatingpolicies"}
+var KyvernoPolicyGroupVersionResource = schema.GroupVersionResource{
+	Group:    "policies.kyverno.io",
+	Version:  kyvernoPolicyVersion,
+	Resource: "namespacedmutatingpolicies",
+}
 
 // KyvernoPolicyKind is the kind of the Kyverno policy.
 const KyvernoPolicyKind = "NamespacedMutatingPolicy"
@@ -115,7 +126,7 @@ func ForgeKyvernoPodAntiaffinityPolicy(suffix string, hostnetwork bool) *unstruc
 			"resourceRules": []map[string]interface{}{
 				{
 					"apiGroups":   []string{""},
-					"apiVersions": []string{"v1"},
+					"apiVersions": []string{kyvernoPolicyVersion},
 					"operations":  []string{"CREATE"},
 					"resources":   []string{"pods"},
 				},
@@ -123,15 +134,15 @@ func ForgeKyvernoPodAntiaffinityPolicy(suffix string, hostnetwork bool) *unstruc
 		},
 		"matchConditions": []map[string]interface{}{
 			{
-				"name":       "match-app-cluster-label",
-				"expression": fmt.Sprintf("object.metadata.?labels['%s'].orValue('') == '%s'", PodLabelAppCluster, labelValue),
+				"name":               "match-app-cluster-label",
+				kyvernoExpressionKey: fmt.Sprintf("object.metadata.?labels['%s'].orValue('') == '%s'", PodLabelAppCluster, labelValue),
 			},
 		},
 		"mutations": []map[string]interface{}{
 			{
 				"patchType": "ApplyConfiguration",
 				"applyConfiguration": map[string]interface{}{
-					"expression": forgeApplyConfigurationExpression(labelValue, hostnetwork),
+					kyvernoExpressionKey: forgeApplyConfigurationExpression(labelValue, hostnetwork),
 				},
 			},
 		},

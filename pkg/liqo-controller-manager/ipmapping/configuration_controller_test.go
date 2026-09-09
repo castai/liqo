@@ -46,11 +46,11 @@ func newTestScheme(t *testing.T) *runtime.Scheme {
 	return scheme
 }
 
-func newTestConfiguration(name, namespace string) *networkingv1beta1.Configuration {
+func newTestConfiguration() *networkingv1beta1.Configuration {
 	return &networkingv1beta1.Configuration{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
+			Name:      "cluster-a",
+			Namespace: "liqo",
 		},
 		Spec: networkingv1beta1.ConfigurationSpec{
 			Local: &networkingv1beta1.ClusterConfig{
@@ -92,7 +92,7 @@ func newTestUnknownSourceIP(cfg *networkingv1beta1.Configuration, ip string) *ip
 func TestReconcileNodePortSupportDisabledDeletesUnknownSourceIP(t *testing.T) {
 	ctx := context.Background()
 	scheme := newTestScheme(t)
-	cfg := newTestConfiguration("cluster-a", "liqo")
+	cfg := newTestConfiguration()
 	ip := newTestUnknownSourceIP(cfg, "10.3.0.1")
 	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cfg, ip).Build()
 
@@ -115,7 +115,7 @@ func TestReconcileNodePortSupportDisabledDeletesUnknownSourceIP(t *testing.T) {
 func TestReconcileNodePortSupportDisabledIgnoresMissingUnknownSourceIP(t *testing.T) {
 	ctx := context.Background()
 	scheme := newTestScheme(t)
-	cfg := newTestConfiguration("cluster-a", "liqo")
+	cfg := newTestConfiguration()
 	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cfg).Build()
 
 	rec := NewConfigurationReconciler(cl, scheme, nil, false)
@@ -128,7 +128,7 @@ func TestReconcileNodePortSupportDisabledIgnoresMissingUnknownSourceIP(t *testin
 func TestReconcileNodePortSupportEnabledCreatesUnknownSourceIP(t *testing.T) {
 	ctx := context.Background()
 	scheme := newTestScheme(t)
-	cfg := newTestConfiguration("cluster-a", "liqo")
+	cfg := newTestConfiguration()
 	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cfg).Build()
 
 	rec := NewConfigurationReconciler(cl, scheme, nil, true)
@@ -145,16 +145,16 @@ func TestReconcileNodePortSupportEnabledCreatesUnknownSourceIP(t *testing.T) {
 		t.Fatalf("expected unknown-source IP to be created, got error: %v", err)
 	}
 
-	if createdIP.Spec.IP != networkingv1beta1.IP("10.3.0.1") {
-		t.Errorf("unexpected unknown-source IP: got %q, want %q", createdIP.Spec.IP, "10.3.0.1")
+	if createdIP.Spec.IP != networkingv1beta1.IP("10.3.0.0") {
+		t.Errorf("unexpected unknown-source IP: got %q, want %q", createdIP.Spec.IP, "10.3.0.0")
 	}
 }
 
 func TestReconcileNodePortSupportEnabledUpdatesExistingUnknownSourceIP(t *testing.T) {
 	ctx := context.Background()
 	scheme := newTestScheme(t)
-	cfg := newTestConfiguration("cluster-a", "liqo")
-	ip := newTestUnknownSourceIP(cfg, "10.3.0.2")
+	cfg := newTestConfiguration()
+	ip := newTestUnknownSourceIP(cfg, "10.3.0.42")
 	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cfg, ip).Build()
 
 	rec := NewConfigurationReconciler(cl, scheme, nil, true)
@@ -168,7 +168,7 @@ func TestReconcileNodePortSupportEnabledUpdatesExistingUnknownSourceIP(t *testin
 		t.Fatalf("expected unknown-source IP to exist, got error: %v", err)
 	}
 
-	if updatedIP.Spec.IP != networkingv1beta1.IP("10.3.0.1") {
-		t.Errorf("unexpected unknown-source IP: got %q, want %q", updatedIP.Spec.IP, "10.3.0.1")
+	if updatedIP.Spec.IP != networkingv1beta1.IP("10.3.0.0") {
+		t.Errorf("unexpected unknown-source IP: got %q, want %q", updatedIP.Spec.IP, "10.3.0.0")
 	}
 }
