@@ -33,7 +33,7 @@ var (
 	MetricsWgUserImpl = prometheus.NewDesc(
 		"liqo_wireguard_implementation",
 		"Wireguard used implementation",
-		[]string{"driver", implLabel},
+		[]string{tunnel.MetricsLabels[0], implLabel},
 		nil,
 	)
 )
