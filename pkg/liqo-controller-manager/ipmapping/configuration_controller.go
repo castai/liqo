@@ -41,12 +41,13 @@ import (
 // +kubebuilder:rbac:groups=networking.liqo.io,resources=configurations,verbs=get;list;watch
 // +kubebuilder:rbac:groups=ipam.liqo.io,resources=ips,verbs=get;list;watch;create;update;patch;delete
 
-// ConfigurationReconciler creates a mapping for the UnknownSourceIP for each remote cluster.
-// This allows traffic with "external" source IPs to be routed from a leaf cluster to another.
+// ConfigurationReconciler creates a mapping for the UnknownSourceIP for each remote cluster when nodeport
+// support is enabled. This allows traffic with "external" source IPs to be routed from a leaf cluster to another.
 type ConfigurationReconciler struct {
-	Client         client.Client
-	Scheme         *runtime.Scheme
-	EventsRecorder record.EventRecorder
+	Client                 client.Client
+	Scheme                 *runtime.Scheme
+	EventsRecorder         record.EventRecorder
+	NodePortSupportEnabled bool
 }
 
 func forgeUnknownSourceIPName(cfg *networkingv1beta1.Configuration) string {
@@ -54,11 +55,13 @@ func forgeUnknownSourceIPName(cfg *networkingv1beta1.Configuration) string {
 }
 
 // NewConfigurationReconciler returns a new ConfigurationReconciler.
-func NewConfigurationReconciler(cl client.Client, s *runtime.Scheme, er record.EventRecorder) *ConfigurationReconciler {
+func NewConfigurationReconciler(cl client.Client, s *runtime.Scheme, er record.EventRecorder,
+	nodePortSupportEnabled bool) *ConfigurationReconciler {
 	return &ConfigurationReconciler{
-		Client:         cl,
-		Scheme:         s,
-		EventsRecorder: er,
+		Client:                 cl,
+		Scheme:                 s,
+		EventsRecorder:         er,
+		NodePortSupportEnabled: nodePortSupportEnabled,
 	}
 }
 
@@ -73,6 +76,14 @@ func (r *ConfigurationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, fmt.Errorf("unable to get the configuration %q: %w", req.NamespacedName, err)
 	}
 	klog.V(4).Infof("Reconciling configuration %q", req.NamespacedName)
+
+	if !r.NodePortSupportEnabled {
+		if err := r.deleteUnknownSourceIP(ctx, cfg); err != nil {
+			return ctrl.Result{}, fmt.Errorf("unable to delete the unknown source IP: %w", err)
+		}
+		klog.V(4).Infof("Nodeport support is disabled: skipping unknown source IP creation for configuration %q", req.NamespacedName)
+		return ctrl.Result{}, nil
+	}
 
 	if len(cfg.Status.Remote.CIDR.External) == 0 {
 		return ctrl.Result{}, fmt.Errorf("configuration %q has no remote external CIDR", req.NamespacedName)
@@ -119,6 +130,21 @@ func (r *ConfigurationReconciler) createOrUpdateUnknownSourceIPResource(ctx cont
 		return controllerutil.SetOwnerReference(cfg, ip, r.Scheme)
 	}); err != nil {
 		return fmt.Errorf("unable to create or update the IP %q: %w", ip.Name, err)
+	}
+	return nil
+}
+
+// deleteUnknownSourceIP deletes the unknown-source IP resource for the given Configuration, if it exists.
+func (r *ConfigurationReconciler) deleteUnknownSourceIP(ctx context.Context,
+	cfg *networkingv1beta1.Configuration) error {
+	unknownSourceIP := &ipamv1alpha1.IP{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      forgeUnknownSourceIPName(cfg),
+			Namespace: cfg.Namespace,
+		},
+	}
+	if err := r.Client.Delete(ctx, unknownSourceIP); err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("unable to delete the IP %q: %w", unknownSourceIP.Name, err)
 	}
 	return nil
 }

@@ -29,10 +29,12 @@ import (
 )
 
 // KyvernoPolicyGroupVersionResource specifies the group version resource used to register the objects.
-var KyvernoPolicyGroupVersionResource = schema.GroupVersionResource{Group: "kyverno.io", Version: "v1", Resource: "policies"}
+// This API is available starting from Kyverno v1.13 (MutatingAdmissionPolicy-based NamespacedMutatingPolicy).
+// Older Kyverno releases do not expose this resource and are not supported by the network tests.
+var KyvernoPolicyGroupVersionResource = schema.GroupVersionResource{Group: "policies.kyverno.io", Version: "v1", Resource: "namespacedmutatingpolicies"}
 
 // KyvernoPolicyKind is the kind of the Kyverno policy.
-const KyvernoPolicyKind = "Policy"
+const KyvernoPolicyKind = "NamespacedMutatingPolicy"
 
 // IsKyvernoAvailable checks if Kyverno is available.
 func IsKyvernoAvailable(ctx context.Context, cl *dynamic.DynamicClient) bool {
@@ -106,24 +108,30 @@ func ForgeKyvernoPodAntiaffinityPolicy(suffix string, hostnetwork bool) *unstruc
 	policy.SetName(name)
 	policy.SetNamespace(NamespaceName)
 
+	labelValue := deploymentName + "-" + suffix
+
 	policy.Object["spec"] = map[string]interface{}{
-		"rules": []map[string]interface{}{
-			{
-				"name": name,
-				"match": map[string]interface{}{
-					"any": []map[string]interface{}{
-						{"resources": map[string]interface{}{
-							"kinds": []string{"Pod"},
-							"selector": map[string]interface{}{
-								"matchLabels": map[string]string{
-									PodLabelAppCluster: deploymentName + "-" + suffix,
-								},
-							},
-						}},
-					},
+		"matchConstraints": map[string]interface{}{
+			"resourceRules": []map[string]interface{}{
+				{
+					"apiGroups":   []string{""},
+					"apiVersions": []string{"v1"},
+					"operations":  []string{"CREATE"},
+					"resources":   []string{"pods"},
 				},
-				"mutate": map[string]interface{}{
-					"patchStrategicMerge": forgeRawPatchStrategicMerge(deploymentName+"-"+suffix, hostnetwork),
+			},
+		},
+		"matchConditions": []map[string]interface{}{
+			{
+				"name":       "match-app-cluster-label",
+				"expression": fmt.Sprintf("object.metadata.?labels['%s'].orValue('') == '%s'", PodLabelAppCluster, labelValue),
+			},
+		},
+		"mutations": []map[string]interface{}{
+			{
+				"patchType": "ApplyConfiguration",
+				"applyConfiguration": map[string]interface{}{
+					"expression": forgeApplyConfigurationExpression(labelValue, hostnetwork),
 				},
 			},
 		},
@@ -131,27 +139,31 @@ func ForgeKyvernoPodAntiaffinityPolicy(suffix string, hostnetwork bool) *unstruc
 	return policy
 }
 
-func forgeRawPatchStrategicMerge(labelValue string, hostnetwork bool) map[string]interface{} {
-	return map[string]interface{}{
-		"spec": map[string]interface{}{
-			"+(affinity)": map[string]interface{}{
-				"+(podAntiAffinity)": map[string]interface{}{
-					"+(preferredDuringSchedulingIgnoredDuringExecution)": []map[string]interface{}{
-						{
-							"weight": 100,
-							"podAffinityTerm": map[string]interface{}{
-								"labelSelector": map[string]interface{}{
-									"matchLabels": map[string]string{
-										PodLabelAppCluster: labelValue,
-									},
-								},
-								"topologyKey": "kubernetes.io/hostname",
-							},
-						},
-					},
-				},
-			},
-			"+(hostNetwork)": hostnetwork,
-		},
+// forgeApplyConfigurationExpression builds the CEL ApplyConfiguration expression that
+// enforces pod anti-affinity (and optionally hostNetwork) on the matched pods.
+func forgeApplyConfigurationExpression(labelValue string, hostnetwork bool) string {
+	hostNetwork := "false"
+	if hostnetwork {
+		hostNetwork = "true"
 	}
+	return fmt.Sprintf(`Object{
+	spec: Object.spec{
+		hostNetwork: %s,
+		affinity: Object.spec.affinity{
+			podAntiAffinity: Object.spec.affinity.podAntiAffinity{
+				preferredDuringSchedulingIgnoredDuringExecution: [
+					Object.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution{
+						weight: 100,
+						podAffinityTerm: Object.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution.podAffinityTerm{
+							labelSelector: Object.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution.podAffinityTerm.labelSelector{
+								matchLabels: {"%s": "%s"}
+							},
+							topologyKey: "kubernetes.io/hostname"
+						}
+					}
+				]
+			}
+		}
+	}
+}`, hostNetwork, PodLabelAppCluster, labelValue)
 }
