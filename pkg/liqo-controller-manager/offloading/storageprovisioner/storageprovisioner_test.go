@@ -413,6 +413,7 @@ var _ = Describe("Test Storage Provisioner", func() {
 						},
 						ReclaimPolicy: func() *corev1.PersistentVolumeReclaimPolicy {
 							policy := corev1.PersistentVolumeReclaimDelete
+
 							return &policy
 						}(),
 					},

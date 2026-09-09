@@ -38,13 +38,18 @@ metadata:
 spec:
   matchConstraints:
     resourceRules:
-      - apiGroups: ["certificates.k8s.io"]
-        apiVersions: ["v1"]
-        operations: ["CREATE"]
-        resources: ["certificatesigningrequests"]
+      - apiGroups:
+          - certificates.k8s.io
+        apiVersions:
+          - v1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - certificatesigningrequests
   matchConditions:
-    - name: match-liqo-identity-csr
-      expression: object.metadata.name.startsWith('liqo-identity')
+    - name: match-liqo-identity
+      expression: "object.metadata.name.startsWith('liqo-identity')"
   mutations:
     - patchType: ApplyConfiguration
       applyConfiguration:
@@ -63,13 +68,7 @@ EOF
     echo "Applying Kyverno MutatingPolicy on cluster ${i} to set the CSR expiration time to 600 seconds"
     echo "${POLICY_MANIFEST}" | "${KUBECTL}" apply -f -
     echo "Waiting for Kyverno MutatingPolicy to become ready on cluster ${i}"
-    # MutatingPolicy may expose Ready, Accepted or Active depending on the Kyverno version.
-    # Try the most common conditions with a short timeout each.
-    for condition in Ready Accepted Active; do
-      if "${KUBECTL}" wait --for=condition="${condition}" mutatingpolicy/patch-csr-expiration --timeout=40s; then
-        break
-      fi
-    done
+    "${KUBECTL}" wait --for=condition=Ready mutatingpolicy/patch-csr-expiration --timeout=120s
   done
 }
 

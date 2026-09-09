@@ -18,5 +18,4 @@ package route
 type Options struct {
 	Namespace                      string
 	RouteConfigurationRulePriority int
-	NodePortSupportEnabled         bool
 }

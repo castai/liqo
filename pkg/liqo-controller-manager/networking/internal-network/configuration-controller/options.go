@@ -16,6 +16,5 @@ package configurationcontroller
 
 // Options contains the configuration options for the ConfigurationController.
 type Options struct {
-	FullMasqueradeEnabled  bool
-	NodePortSupportEnabled bool
+	FullMasqueradeEnabled bool
 }

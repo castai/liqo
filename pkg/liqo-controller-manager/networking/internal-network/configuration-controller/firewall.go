@@ -127,32 +127,30 @@ func forgeFirewallNatRule(cfg *networkingv1beta1.Configuration, opts *Options) (
 	}
 
 	// NodePort: per remote-pod-CIDR, SNAT to unknown-source-IP for traffic not originating from any local pod CIDR.
-	if opts.NodePortSupportEnabled {
-		for ri := range remotePodCIDRs {
-			remotePodCIDRStr := remotePodCIDRs[ri].String()
-			rule := firewallapi.NatRule{
-				Name: ptr.To(generateNodePortSvcNatRuleName(cfg, remotePodCIDRStr)),
-				Match: []firewallapi.Match{
-					{
-						Op: firewallapi.MatchOperationEq,
-						IP: &firewallapi.MatchIP{Position: firewallapi.MatchPositionDst, Value: remotePodCIDRStr},
-					},
+	for ri := range remotePodCIDRs {
+		remotePodCIDRStr := remotePodCIDRs[ri].String()
+		rule := firewallapi.NatRule{
+			Name: ptr.To(generateNodePortSvcNatRuleName(cfg, remotePodCIDRStr)),
+			Match: []firewallapi.Match{
+				{
+					Op: firewallapi.MatchOperationEq,
+					IP: &firewallapi.MatchIP{Position: firewallapi.MatchPositionDst, Value: remotePodCIDRStr},
 				},
-				NatType: firewallapi.NatTypeSource,
-				To:      ptr.To(unknownSourceIP),
-			}
-
-			// If full masquerade is enable we do the SNAT for all the traffic.
-			if !opts.FullMasqueradeEnabled {
-				for li := range localPodCIDRs {
-					rule.Match = append(rule.Match, firewallapi.Match{
-						Op: firewallapi.MatchOperationNeq,
-						IP: &firewallapi.MatchIP{Position: firewallapi.MatchPositionSrc, Value: localPodCIDRs[li].String()},
-					})
-				}
-			}
-			natrules = append(natrules, rule)
+			},
+			NatType: firewallapi.NatTypeSource,
+			To:      ptr.To(unknownSourceIP),
 		}
+
+		// If full masquerade is enable we do the SNAT for all the traffic.
+		if !opts.FullMasqueradeEnabled {
+			for li := range localPodCIDRs {
+				rule.Match = append(rule.Match, firewallapi.Match{
+					Op: firewallapi.MatchOperationNeq,
+					IP: &firewallapi.MatchIP{Position: firewallapi.MatchPositionSrc, Value: localPodCIDRs[li].String()},
+				})
+			}
+		}
+		natrules = append(natrules, rule)
 	}
 
 	// External CIDR: per (local-pod, remote-external) pair, a no-op SNAT acting as masquerade-bypass marker.
@@ -178,30 +176,28 @@ func forgeFirewallNatRule(cfg *networkingv1beta1.Configuration, opts *Options) (
 	}
 
 	// NodePort: SNAT to unknown-source-IP for traffic towards remote-external-CIDR not originating from any local pod CIDR.
-	if opts.NodePortSupportEnabled {
-		rule := firewallapi.NatRule{
-			Name: ptr.To(generateNodePortSvcNatRuleNameExt(cfg)),
-			Match: []firewallapi.Match{
-				{
-					Op: firewallapi.MatchOperationEq,
-					IP: &firewallapi.MatchIP{Position: firewallapi.MatchPositionDst, Value: remoteExtCIDR.String()},
-				},
+	rule := firewallapi.NatRule{
+		Name: ptr.To(generateNodePortSvcNatRuleNameExt(cfg)),
+		Match: []firewallapi.Match{
+			{
+				Op: firewallapi.MatchOperationEq,
+				IP: &firewallapi.MatchIP{Position: firewallapi.MatchPositionDst, Value: remoteExtCIDR.String()},
 			},
-			NatType: firewallapi.NatTypeSource,
-			To:      ptr.To(unknownSourceIP),
-		}
-
-		// If full masquerade is enable we do the SNAT for all the traffic.
-		if !opts.FullMasqueradeEnabled {
-			for li := range localPodCIDRs {
-				rule.Match = append(rule.Match, firewallapi.Match{
-					Op: firewallapi.MatchOperationNeq,
-					IP: &firewallapi.MatchIP{Position: firewallapi.MatchPositionSrc, Value: localPodCIDRs[li].String()},
-				})
-			}
-		}
-		natrules = append(natrules, rule)
+		},
+		NatType: firewallapi.NatTypeSource,
+		To:      ptr.To(unknownSourceIP),
 	}
+
+	// If full masquerade is enable we do the SNAT for all the traffic.
+	if !opts.FullMasqueradeEnabled {
+		for li := range localPodCIDRs {
+			rule.Match = append(rule.Match, firewallapi.Match{
+				Op: firewallapi.MatchOperationNeq,
+				IP: &firewallapi.MatchIP{Position: firewallapi.MatchPositionSrc, Value: localPodCIDRs[li].String()},
+			})
+		}
+	}
+	natrules = append(natrules, rule)
 	return natrules, nil
 }
 

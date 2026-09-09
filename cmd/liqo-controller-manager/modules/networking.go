@@ -67,7 +67,6 @@ type NetworkingOption struct {
 	FabricFullMasquerade           bool
 	GwmasqbypassEnabled            bool
 	GatewayTemplateWatchEnabled    bool
-	NodePortSupportEnabled         bool
 
 	GenevePort                     uint16
 	RouteConfigurationRulePriority int
@@ -90,7 +89,6 @@ func NewNetworkingOption(factory *dynamicutils.RunnableFactory, dynClient dynami
 		NetworkWorkers:                 opts.NetworkWorkers,
 		IPWorkers:                      opts.IPWorkers,
 		FabricFullMasquerade:           opts.FabricFullMasqueradeEnabled,
-		NodePortSupportEnabled:         opts.NodePortSupportEnabled,
 		GwmasqbypassEnabled:            opts.GwmasqbypassEnabled,
 		GatewayTemplateWatchEnabled:    opts.GatewayTemplateWatchEnabled,
 
@@ -214,8 +212,7 @@ func SetupNetworkingModule(ctx context.Context, mgr manager.Manager, uncachedCli
 
 	configurationReconciler := internalconfigurationcontroller.NewConfigurationReconciler(mgr.GetClient(), mgr.GetScheme(),
 		&internalconfigurationcontroller.Options{
-			FullMasqueradeEnabled:  opts.FabricFullMasquerade,
-			NodePortSupportEnabled: opts.NodePortSupportEnabled,
+			FullMasqueradeEnabled: opts.FabricFullMasquerade,
 		})
 	if err := configurationReconciler.SetupWithManager(mgr); err != nil {
 		klog.Errorf("Unable to start the configurationReconciler: %v", err)
@@ -239,8 +236,7 @@ func SetupNetworkingModule(ctx context.Context, mgr manager.Manager, uncachedCli
 		mgr.GetScheme(),
 		mgr.GetEventRecorderFor("internal-node-controller"),
 		&route.Options{
-			Namespace:              opts.LiqoNamespace,
-			NodePortSupportEnabled: opts.NodePortSupportEnabled,
+			Namespace: opts.LiqoNamespace,
 		},
 	)
 	if err := internalNodeReconciler.SetupWithManager(mgr); err != nil {

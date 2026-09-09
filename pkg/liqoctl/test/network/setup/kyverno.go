@@ -28,10 +28,21 @@ import (
 	"github.com/liqotech/liqo/pkg/liqoctl/test/network/flags"
 )
 
+const (
+	// kyvernoPolicyVersion is the API version used for Kyverno MutatingAdmissionPolicy-based policies.
+	kyvernoPolicyVersion = "v1"
+	// kyvernoExpressionKey is the key used for CEL expression fields in Kyverno policies.
+	kyvernoExpressionKey = "expression"
+)
+
 // KyvernoPolicyGroupVersionResource specifies the group version resource used to register the objects.
 // This API is available starting from Kyverno v1.13 (MutatingAdmissionPolicy-based NamespacedMutatingPolicy).
 // Older Kyverno releases do not expose this resource and are not supported by the network tests.
-var KyvernoPolicyGroupVersionResource = schema.GroupVersionResource{Group: "policies.kyverno.io", Version: "v1", Resource: "namespacedmutatingpolicies"}
+var KyvernoPolicyGroupVersionResource = schema.GroupVersionResource{
+	Group:    "policies.kyverno.io",
+	Version:  kyvernoPolicyVersion,
+	Resource: "namespacedmutatingpolicies",
+}
 
 // KyvernoPolicyKind is the kind of the Kyverno policy.
 const KyvernoPolicyKind = "NamespacedMutatingPolicy"
@@ -60,33 +71,32 @@ func createPolicyForCluster(ctx context.Context, dynClient dynamic.Interface, cl
 	return nil
 }
 
-// CreatePolicy creates the Kyverno policies.
+// CreatePolicy removes stale Kyverno mutation policies left by previous liqoctl versions.
+// Pod anti-affinity and hostNetwork are now baked into the Deployment specs, so no new
+// Kyverno policies need to be created.
 func CreatePolicy(ctx context.Context, cl *client.Client, opts *flags.Options) error {
-	var kyvernoNotInstalled bool
-	printer := opts.Topts.LocalFactory.Printer
+	names := []string{"pod-antiaffinity", "pod-antiaffinity-host"}
 
-	if IsKyvernoAvailable(ctx, cl.ConsumerDynamic) {
-		if err := createPolicyForCluster(ctx, cl.ConsumerDynamic, cl.ConsumerName, "consumer"); err != nil {
+	deleteStale := func(dyn *dynamic.DynamicClient, clusterType string) error {
+		if !IsKyvernoAvailable(ctx, dyn) {
+			return nil
+		}
+		for _, name := range names {
+			if err := dyn.Resource(KyvernoPolicyGroupVersionResource).Namespace(NamespaceName).
+				Delete(ctx, name, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
+				return fmt.Errorf("error deleting stale Kyverno policy %q on %s: %w", name, clusterType, err)
+			}
+		}
+		return nil
+	}
+
+	if err := deleteStale(cl.ConsumerDynamic, "consumer"); err != nil {
+		return err
+	}
+	for k := range cl.Providers {
+		if err := deleteStale(cl.ProvidersDynamic[k], fmt.Sprintf("provider %q", k)); err != nil {
 			return err
 		}
-	} else {
-		kyvernoNotInstalled = true
-		printer.Logger.Warn("Kyverno not available on consumer, skipping policy creation.")
-	}
-
-	for k := range cl.Providers {
-		if IsKyvernoAvailable(ctx, cl.ProvidersDynamic[k]) {
-			if err := createPolicyForCluster(ctx, cl.ProvidersDynamic[k], k, fmt.Sprintf("provider %q", k)); err != nil {
-				return err
-			}
-		} else {
-			kyvernoNotInstalled = true
-			printer.Logger.Warn(fmt.Sprintf("Kyverno not available on provider %q, skipping policy creation.", k))
-		}
-	}
-
-	if kyvernoNotInstalled {
-		printer.Logger.Warn("Pods may not be scheduled on every node. Install Kyverno on all clusters for comprehensive tests.")
 	}
 	return nil
 }
@@ -115,7 +125,7 @@ func ForgeKyvernoPodAntiaffinityPolicy(suffix string, hostnetwork bool) *unstruc
 			"resourceRules": []map[string]interface{}{
 				{
 					"apiGroups":   []string{""},
-					"apiVersions": []string{"v1"},
+					"apiVersions": []string{kyvernoPolicyVersion},
 					"operations":  []string{"CREATE"},
 					"resources":   []string{"pods"},
 				},
@@ -123,15 +133,15 @@ func ForgeKyvernoPodAntiaffinityPolicy(suffix string, hostnetwork bool) *unstruc
 		},
 		"matchConditions": []map[string]interface{}{
 			{
-				"name":       "match-app-cluster-label",
-				"expression": fmt.Sprintf("object.metadata.?labels['%s'].orValue('') == '%s'", PodLabelAppCluster, labelValue),
+				"name":               "match-app-cluster-label",
+				kyvernoExpressionKey: fmt.Sprintf("object.metadata.?labels['%s'].orValue('') == '%s'", PodLabelAppCluster, labelValue),
 			},
 		},
 		"mutations": []map[string]interface{}{
 			{
 				"patchType": "ApplyConfiguration",
 				"applyConfiguration": map[string]interface{}{
-					"expression": forgeApplyConfigurationExpression(labelValue, hostnetwork),
+					kyvernoExpressionKey: forgeApplyConfigurationExpression(labelValue, hostnetwork),
 				},
 			},
 		},
