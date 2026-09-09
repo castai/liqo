@@ -272,14 +272,14 @@ func ensureFirewallConfigurationSNATRules(rules *firewall.RulesSet, ip *ipamv1al
 	if !containsNATRule(rules.NatRules, ip.Spec.IP.String(), firewall.MatchPositionSrc) {
 		rules.NatRules = append(rules.NatRules, firewall.NatRule{
 			NatType: firewall.NatTypeSource,
-			To:      ptr.To(ip.Spec.IP.String()),
+			To:      ptr.To(remappedIP.String()),
 			Name:    &ip.Name,
 			Match: []firewall.Match{
 				{
 					Op: firewall.MatchOperationEq,
 					IP: &firewall.MatchIP{
 						Position: firewall.MatchPositionSrc,
-						Value:    remappedIP.String(),
+						Value:    ip.Spec.IP.String(),
 					},
 				},
 			},
