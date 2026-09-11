@@ -259,6 +259,7 @@ func run(cmd *cobra.Command, _ []string) error {
 			mgr.GetClient(),
 			mgr.GetScheme(),
 			mgr.GetEventRecorderFor("configuration-controller"),
+			opts.NodePortSupportEnabled,
 		)
 		if err := configurationReconciler.SetupWithManager(mgr); err != nil {
 			return fmt.Errorf("unable to start the configuration reconciler: %w", err)

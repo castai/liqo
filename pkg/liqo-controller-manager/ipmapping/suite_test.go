@@ -12,10 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package configurationcontroller
+package ipmapping
 
-// Options contains the configuration options for the ConfigurationController.
-type Options struct {
-	FullMasqueradeEnabled  bool
-	NodePortSupportEnabled bool
+import (
+	"testing"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	"k8s.io/kubectl/pkg/scheme"
+
+	ipamv1alpha1 "github.com/liqotech/liqo/apis/ipam/v1alpha1"
+	networkingv1beta1 "github.com/liqotech/liqo/apis/networking/v1beta1"
+	"github.com/liqotech/liqo/pkg/utils/testutil"
+)
+
+func TestIPMapping(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "IP Mapping Suite")
 }
+
+var _ = BeforeSuite(func() {
+	testutil.LogsToGinkgoWriter()
+	Expect(networkingv1beta1.AddToScheme(scheme.Scheme)).To(Succeed())
+	Expect(ipamv1alpha1.AddToScheme(scheme.Scheme)).To(Succeed())
+})

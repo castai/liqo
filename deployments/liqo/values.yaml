@@ -54,6 +54,9 @@ apiServer:
 networking:
   # -- Use the default Liqo networking module.
   enabled: true
+  nodePort:
+    # -- Allow reaching offloaded pods through a NodePort or LoadBalancer service.
+    enabled: false
   # -- Reflect pod IPs and EnpointSlices to the remote clusters.
   reflectIPs: true
   # -- Prevents the usage of direct connections by provider clusters.

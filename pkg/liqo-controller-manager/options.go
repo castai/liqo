@@ -50,6 +50,7 @@ type Options struct {
 	WgGatewayServerClusterRoleName string
 	WgGatewayClientClusterRoleName string
 	FabricFullMasqueradeEnabled    bool
+	NodePortSupportEnabled         bool
 	GwmasqbypassEnabled            bool
 	GatewayTemplateWatchEnabled    bool
 	NetworkWorkers                 int
