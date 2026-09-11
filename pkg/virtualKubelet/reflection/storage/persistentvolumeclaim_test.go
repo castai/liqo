@@ -100,6 +100,12 @@ var _ = Describe("reflector methods", func() {
 				It("should create the local PV", func() {
 					Expect(err).ToNot(HaveOccurred())
 
+					// Retrieve the PVC directly: the shared localPvc variable is only populated by the
+					// sibling spec above, which is not guaranteed to have run first when the spec order
+					// is randomized.
+					localPvc, err := k8sClient.CoreV1().PersistentVolumeClaims(LocalNamespace).Get(ctx, remotePvcName, metav1.GetOptions{})
+					Expect(err).ToNot(HaveOccurred())
+
 					localPv, err := k8sClient.CoreV1().PersistentVolumes().Get(ctx, localPvc.Spec.VolumeName, metav1.GetOptions{})
 					Expect(err).ToNot(HaveOccurred())
 					Expect(localPv).ToNot(BeNil())

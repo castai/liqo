@@ -39,6 +39,24 @@ const (
 	localPVName         = "local-storage-pv"
 )
 
+// awaitLocalCacheEntries waits until the given local PVC (and, when non-empty, the PV) are visible
+// in the shared informers' caches. WaitForCacheSync returns immediately if the informers were
+// already started by a previous test, in which case a freshly created object may not be listed
+// yet, and the subsequent Handle call would wrongly consider it as vanished.
+func awaitLocalCacheEntries(pvcName, pvName string) {
+	Eventually(func() bool {
+		if _, err := factory.Core().V1().PersistentVolumeClaims().Lister().
+			PersistentVolumeClaims(LocalNamespace).Get(pvcName); err != nil {
+			return false
+		}
+		if pvName == "" {
+			return true
+		}
+		_, err := factory.Core().V1().PersistentVolumes().Lister().Get(pvName)
+		return err == nil
+	}, 10*time.Second, 250*time.Millisecond).Should(BeTrue())
+}
+
 // createBoundLocalStoragePVC creates a bound local-storage PVC together with its backing PV,
 // and returns the created PV and PVC objects. The PVC uses the standard local-storage class
 // and is bound to the returned PV.
@@ -264,6 +282,8 @@ var _ = Describe("local storage PVC reflector integration", func() {
 		factory.Start(ctx.Done())
 		factory.WaitForCacheSync(ctx.Done())
 
+		awaitLocalCacheEntries(localStoragePVCName, pv.Name)
+
 		Expect(lsReflector.Handle(ctx, localStoragePVCName)).To(Succeed())
 
 		expectedRemotePVName := remotePVNameFromLocal(pv)
@@ -339,6 +359,8 @@ var _ = Describe("local storage PVC reflector integration", func() {
 
 		factory.Start(ctx.Done())
 		factory.WaitForCacheSync(ctx.Done())
+
+		awaitLocalCacheEntries(deleteTestPVCName, deleteTestPVName)
 
 		Expect(lsReflector.Handle(ctx, deleteTestPVCName)).To(Succeed())
 
@@ -466,6 +488,8 @@ var _ = Describe("local storage PVC reflector integration", func() {
 
 			factory.Start(ctx.Done())
 			factory.WaitForCacheSync(ctx.Done())
+
+			awaitLocalCacheEntries(pvc.Name, pv.Name)
 
 			Expect(lsReflector.Handle(ctx, pvc.Name)).To(Succeed())
 
