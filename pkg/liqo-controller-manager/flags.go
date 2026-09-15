@@ -70,6 +70,8 @@ func InitFlags(flagset *pflag.FlagSet, opts *Options) {
 		"The name of the cluster role used by the wireguard gateway clients")
 	flagset.BoolVar(&opts.FabricFullMasqueradeEnabled, "fabric-full-masquerade-enabled", false,
 		"Enable the full masquerade on the fabric network")
+	flagset.BoolVar(&opts.NodePortSupportEnabled, "node-port-support-enabled", false,
+		"Enable the nodeport support in the fabric network")
 	flagset.BoolVar(&opts.GwmasqbypassEnabled, "gateway-masquerade-bypass-enabled", false,
 		"Enable the gateway masquerade bypass")
 	flagset.BoolVar(&opts.GatewayTemplateWatchEnabled, "gateway-template-watch-enabled", true,
