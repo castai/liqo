@@ -51,6 +51,7 @@ func NewOffloadedPodReconciler(cl client.Client, s *runtime.Scheme, er record.Ev
 }
 
 // +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch
 // +kubebuilder:rbac:groups=networking.liqo.io,resources=ips,verbs=get;list;watch;update;patch;create;delete
 
 // Reconcile reconciles on offloaded pods.
@@ -68,6 +69,22 @@ func (r *OffloadedPodReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	if pod.Status.PodIP == "" {
 		return ctrl.Result{RequeueAfter: time.Second}, nil
+	}
+
+	if pod.Spec.NodeName == "" {
+		return ctrl.Result{RequeueAfter: time.Second}, nil
+	}
+
+	node := &corev1.Node{}
+	if err := r.Client.Get(ctx, client.ObjectKey{Name: pod.Spec.NodeName}, node); err != nil {
+		return ctrl.Result{}, fmt.Errorf("fetching node %q for pod %s: %w", pod.Spec.NodeName, req.String(), err)
+	}
+
+	// IP mappings are needed only for pods running on a remote cluster through a VirtualNode
+	// (i.e., a node acting as provider for the local cluster).
+	if nodeType, ok := node.Labels[consts.TypeLabel]; !ok || nodeType != consts.TypeNode {
+		klog.V(4).Infof("Pod %s is scheduled on real node %q, skipping IP mapping", req.String(), node.Name)
+		return ctrl.Result{}, nil
 	}
 
 	op, err := CreateOrUpdateIP(ctx, r.Client, r.Scheme, pod)
