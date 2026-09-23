@@ -29,7 +29,7 @@ liqo-crds:
     image:
       # -- Image repository for the CRD upgrade job.
       # NOTE: This image only supports linux/amd64 and linux/arm64 platforms (arm/v7 is not supported).
-      name: "us-docker.pkg.dev/castai-hub/library/liqo/liqo-crd-upgrade"
+      name: "ghcr.io/castai/images/liqo-crd-upgrade"
       # -- Image version for the CRD upgrade job. Required when crdUpgrade.enabled is true.
       version: ""
       # -- Image pull policy for the CRD upgrade job.
@@ -136,7 +136,7 @@ networking:
       gateway:
         image:
           # -- Image repository for the gateway container.
-          name: "us-docker.pkg.dev/castai-hub/library/liqo/gateway"
+          name: "ghcr.io/castai/images/gateway"
           # -- Custom version for the gateway image. If not specified, the global tag is used.
           version: ""
         # -- Resource requests and limits (https://kubernetes.io/docs/user-guide/compute-resources/) for the gateway container.
@@ -148,7 +148,7 @@ networking:
       wireguard:
         image:
           # -- Image repository for the wireguard container.
-          name: "us-docker.pkg.dev/castai-hub/library/liqo/gateway/wireguard"
+          name: "ghcr.io/castai/images/gateway/wireguard"
           # -- Custom version for the wireguard image. If not specified, the global tag is used.
           version: ""
         # -- Resource requests and limits (https://kubernetes.io/docs/user-guide/compute-resources/) for the wireguard container.
@@ -158,7 +158,7 @@ networking:
       geneve:
         image:
           # -- Image repository for the geneve container.
-          name: "us-docker.pkg.dev/castai-hub/library/liqo/gateway/geneve"
+          name: "ghcr.io/castai/images/gateway/geneve"
           # -- Custom version for the geneve image. If not specified, the global tag is used.
           version: ""
         # -- Resource requests and limits (https://kubernetes.io/docs/user-guide/compute-resources/) for the geneve container.
@@ -187,7 +187,7 @@ networking:
       priorityClassName: ""
     image:
       # -- Image repository for the fabric pod.
-      name: "us-docker.pkg.dev/castai-hub/library/liqo/fabric"
+      name: "ghcr.io/castai/images/fabric"
       # -- Custom version for the fabric image. If not specified, the global tag is used.
       version: ""
     # -- NodeSelector for the fabric pod.
@@ -468,7 +468,7 @@ controllerManager:
     priorityClassName: ""
   image:
     # -- Image repository for the controller-manager pod.
-    name: "us-docker.pkg.dev/castai-hub/library/liqo/liqo-controller-manager"
+    name: "ghcr.io/castai/images/liqo-controller-manager"
     # -- Custom version for the controller-manager image. If not specified, the global tag is used.
     version: ""
   config:
@@ -527,7 +527,7 @@ webhook:
     priorityClassName: ""
   image:
     # -- Image repository for the webhook pod.
-    name: "us-docker.pkg.dev/castai-hub/library/liqo/webhook"
+    name: "ghcr.io/castai/images/webhook"
     # -- Custom version for the webhook image. If not specified, the global tag is used.
     version: ""
   metrics:
@@ -563,7 +563,7 @@ ipam:
   internal:
     image:
       # -- Image repository for the IPAM pod.
-      name: "us-docker.pkg.dev/castai-hub/library/liqo/ipam"
+      name: "ghcr.io/castai/images/ipam"
       # -- Custom version for the IPAM image. If not specified, the global tag is used.
       version: ""
     # -- The number of IPAM instances to run, which can be increased for active/passive high availability.
@@ -650,7 +650,7 @@ crdReplicator:
       labels: {}
   image:
     # -- Image repository for the crdReplicator pod.
-    name: "us-docker.pkg.dev/castai-hub/library/liqo/crd-replicator"
+    name: "ghcr.io/castai/images/crd-replicator"
     # -- Custom version for the crdReplicator image. If not specified, the global tag is used.
     version: ""
 
@@ -696,13 +696,13 @@ metricAgent:
     priorityClassName: ""
   image:
     # -- Image repository for the metricAgent pod.
-    name: "us-docker.pkg.dev/castai-hub/library/liqo/metric-agent"
+    name: "ghcr.io/castai/images/metric-agent"
     # -- Custom version for the metricAgent image. If not specified, the global tag is used.
     version: ""
   initContainer:
     image:
       # --Image repository for the init container of the metricAgent pod.
-      name: "us-docker.pkg.dev/castai-hub/library/liqo/cert-creator"
+      name: "ghcr.io/castai/images/cert-creator"
       # -- Custom version for the init container image of the metricAgent pod. If not specified, the global tag is used.
       version: ""
 
@@ -722,7 +722,7 @@ telemetry:
       requests: {}
   image:
     # -- Image repository for the telemetry pod.
-    name: "us-docker.pkg.dev/castai-hub/library/liqo/telemetry"
+    name: "ghcr.io/castai/images/telemetry"
     # -- Custom version for the telemetry image. If not specified, the global tag is used.
     version: ""
   config:
@@ -735,7 +735,7 @@ virtualKubelet:
   replicas: 1
   image:
     # -- Image repository for the virtual kubelet pod.
-    name: "us-docker.pkg.dev/castai-hub/library/liqo/virtual-kubelet"
+    name: "ghcr.io/castai/images/virtual-kubelet"
     # -- Custom version for the virtual kubelet image. If not specified, the global tag is used.
     version: ""
   # Additional values that are added to virtual kubelet deployments and pods.
@@ -787,7 +787,7 @@ uninstaller:
       requests: {}
   image:
     # -- Image repository for the uninstaller pod.
-    name: "us-docker.pkg.dev/castai-hub/library/liqo/uninstaller"
+    name: "ghcr.io/castai/images/uninstaller"
     # -- Custom version for the uninstaller image. If not specified, the global tag is used.
     version: ""
 
@@ -813,7 +813,7 @@ proxy:
     priorityClassName: ""
   image:
     # -- Image repository for the proxy pod.
-    name: "us-docker.pkg.dev/castai-hub/library/liqo/proxy"
+    name: "ghcr.io/castai/images/proxy"
     # -- Custom version for the proxy image. If not specified, the global tag is used.
     version: ""
   service:
