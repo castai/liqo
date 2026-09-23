@@ -30,6 +30,11 @@ DOCKER_TAG="${DOCKER_TAG:-latest}"
 DOCKER_PUSH="${DOCKER_PUSH:-true}"
 ARCHS="${ARCHS:-linux/amd64,linux/arm64}"
 
+# Secondary registry: when both are set, the image is also tagged
+# (and pushed) as ${GHCR_REGISTRY}/${GHCR_IMAGE_PREFIX}/<component>
+GHCR_REGISTRY="${GHCR_REGISTRY:-}"
+GHCR_IMAGE_PREFIX="${GHCR_IMAGE_PREFIX:-}"
+
 echo "Downloading Go modules..."
 start_time=$(date +%s)
 go mod download
@@ -72,12 +77,22 @@ else
 fi
 
 if [[ "$DOCKER_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
-    image_tag="${DOCKER_REGISTRY}/$DOCKER_ORGANIZATION/${image_component}:${DOCKER_TAG}"
+    repo_suffix=""
 else
-    image_tag="${DOCKER_REGISTRY}/${DOCKER_ORGANIZATION}/${image_component}-ci:${DOCKER_TAG}"
+    repo_suffix="-ci"
 fi
+
+image_tag="${DOCKER_REGISTRY}/${DOCKER_ORGANIZATION}/${image_component}${repo_suffix}:${DOCKER_TAG}"
+tag_args=(-t "$image_tag")
+
+if [ -n "$GHCR_REGISTRY" ] && [ -n "$GHCR_IMAGE_PREFIX" ]; then
+    ghcr_tag="${GHCR_REGISTRY}/${GHCR_IMAGE_PREFIX}/${image_component}${repo_suffix}:${DOCKER_TAG}"
+    tag_args+=(-t "$ghcr_tag")
+    echo "Also tagging container image as $ghcr_tag"
+fi
+
 echo "Building container image $image_tag for architectures $ARCHS..."
 docker buildx build --platform "${ARCHS}" \
     --build-arg COMPONENT="$component" \
-    -t "$image_tag" -f ./build/liqo/Dockerfile . \
+    "${tag_args[@]}" -f ./build/liqo/Dockerfile . \
     "$(if $DOCKER_PUSH; then echo --push; else echo --load; fi)"
