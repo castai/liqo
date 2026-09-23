@@ -92,6 +92,21 @@ entries:
     - https://github.com/castai/liqo/releases/download/v1.2.0-19-rc1/liqo-v1.2.0-19-rc1.tgz
     version: v1.2.0-19-rc1
   - apiVersion: v2
+    appVersion: v1.2.0-23
+    created: "2026-09-23T13:31:37.183224701Z"
+    dependencies:
+    - name: liqo-crds
+      repository: file://./charts/liqo-crds
+      version: 0.1.0
+    description: A Helm chart for Liqo
+    digest: c976cb3f80ddf274e6a3307b1446a9830f618212f9a3384bc127dd1adeb513c4
+    icon: https://liqo.io/imgs/favicon.svg
+    name: liqo
+    type: application
+    urls:
+    - https://github.com/castai/liqo/releases/download/v1.2.0-23/liqo-v1.2.0-23.tgz
+    version: v1.2.0-23
+  - apiVersion: v2
     appVersion: v1.2.0-22
     created: "2026-09-21T07:35:06.041187934Z"
     dependencies:
@@ -1435,4 +1450,4 @@ entries:
     urls:
     - https://castai.github.io/liqo/charts/liqo-0.0.0-frc-masterchart.aac90a97.tgz
     version: 0.0.0-frc-masterchart.aac90a97
-generated: "2026-09-21T07:35:06.041899077Z"
+generated: "2026-09-23T13:31:37.184250082Z"
