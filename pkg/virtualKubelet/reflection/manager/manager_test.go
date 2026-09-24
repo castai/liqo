@@ -186,6 +186,7 @@ type fakeNamespaceHandler struct {
 }
 
 // Start is the fake Start method.
-func (nh *fakeNamespaceHandler) Start(_ context.Context, _ NamespaceStartStopper) {
+func (nh *fakeNamespaceHandler) Start(_ context.Context, _ NamespaceStartStopper) error {
 	nh.StartCalled++
+	return nil
 }
