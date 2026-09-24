@@ -16,6 +16,7 @@ package utils
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 
 	"github.com/google/nftables"
@@ -103,6 +104,10 @@ func forgeFilterRule(fr *firewallv1beta1.FilterRule, chain *nftables.Chain) (*nf
 		applyRejectAction(rule)
 	case firewallv1beta1.ActionNotrack:
 		applyNotrackAction(rule)
+	case firewallv1beta1.ActionSetMetaMark:
+		if err := applySetMetaMarkAction(fr.Value, rule); err != nil {
+			return nil, fmt.Errorf("cannot apply setmetamark action: %w", err)
+		}
 	default:
 	}
 
@@ -110,9 +115,15 @@ func forgeFilterRule(fr *firewallv1beta1.FilterRule, chain *nftables.Chain) (*nf
 }
 
 func applyCtMarkAction(value *string, rule *nftables.Rule) error {
+	if value == nil {
+		return fmt.Errorf("value is required for %s action", firewallv1beta1.ActionCtMark)
+	}
 	valueInt, err := strconv.Atoi(*value)
 	if err != nil {
 		return fmt.Errorf("cannot convert value to int: %w", err)
+	}
+	if valueInt < 0 || valueInt > math.MaxUint32 {
+		return fmt.Errorf("value %d is out of range for a uint32 mark", valueInt)
 	}
 	rule.Exprs = append(rule.Exprs,
 		&expr.Immediate{
@@ -233,6 +244,31 @@ func applyRejectAction(rule *nftables.Rule) {
 
 func applyNotrackAction(rule *nftables.Rule) {
 	rule.Exprs = append(rule.Exprs, &expr.Notrack{})
+}
+
+func applySetMetaMarkAction(value *string, rule *nftables.Rule) error {
+	if value == nil {
+		return fmt.Errorf("value is required for %s action", firewallv1beta1.ActionSetMetaMark)
+	}
+	valueInt, err := strconv.Atoi(*value)
+	if err != nil {
+		return fmt.Errorf("cannot convert value to int: %w", err)
+	}
+	if valueInt < 0 || valueInt > math.MaxUint32 {
+		return fmt.Errorf("value %d is out of range for a uint32 mark", valueInt)
+	}
+	rule.Exprs = append(rule.Exprs,
+		&expr.Immediate{
+			Register: 1,
+			Data:     binaryutil.NativeEndian.PutUint32(uint32(valueInt)),
+		},
+		&expr.Meta{
+			Key:            expr.MetaKeyMARK,
+			SourceRegister: true,
+			Register:       1,
+		},
+	)
+	return nil
 }
 
 func applyCounter(rule *nftables.Rule) {
