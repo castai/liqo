@@ -16,6 +16,7 @@ package configurationcontroller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
@@ -64,6 +65,7 @@ func NewConfigurationReconciler(cl client.Client, s *runtime.Scheme, er record.E
 // +kubebuilder:rbac:groups=networking.liqo.io,resources=configurations/finalizers,verbs=update
 // +kubebuilder:rbac:groups=ipam.liqo.io,resources=networks,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=ipam.liqo.io,resources=networks/status,verbs=get;list;watch
+// +kubebuilder:rbac:groups=networking.liqo.io,resources=firewallconfigurations,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile manage Configurations, remapping cidrs with Networks resources.
 func (r *ConfigurationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -89,6 +91,13 @@ func (r *ConfigurationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
+	// Tunneled CIDRs are optional and reserved best-effort: their failures must not prevent the rest of the
+	// network from being configured, so they are collected and returned only after the status has been updated.
+	tunneledErr := r.reserveTunneledCIDRs(ctx, configuration, r.EventsRecorder)
+	if err := r.ensureTunneledMasquerade(ctx, configuration); err != nil {
+		tunneledErr = errors.Join(tunneledErr, err)
+	}
+
 	// Update configuration conditions.
 	r.setConfigurationConditions(configuration)
 
@@ -104,9 +113,15 @@ func (r *ConfigurationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		} else {
 			events.Event(r.EventsRecorder, configuration, "Waiting for all networks to be ready")
 		}
+
+		if isTunneledReservationComplete(configuration) {
+			events.Event(r.EventsRecorder, configuration, "All tunneled CIDRs reserved")
+		} else {
+			events.Event(r.EventsRecorder, configuration, "Waiting for all tunneled CIDRs to be reserved")
+		}
 	}
 
-	return ctrl.Result{}, nil
+	return ctrl.Result{}, tunneledErr
 }
 
 func (r *ConfigurationReconciler) defaultLocalNetwork(ctx context.Context, cfg *networkingv1beta1.Configuration) error {
@@ -137,34 +152,75 @@ func (r *ConfigurationReconciler) defaultLocalNetwork(ctx context.Context, cfg *
 // deletes Networks for CIDRs no longer in the spec, and populates the configuration status with
 // the IPAM-remapped values, index-aligned with the spec. Positions whose corresponding Network
 // has not yet been remapped by the IPAM are left as empty CIDRs.
+//
+// Pod and external CIDRs are remapped here, and their failure is fatal. Tunneled CIDRs are reserved
+// separately by reserveTunneledCIDRs, so that an optional tunneled CIDR cannot block the rest of the network.
 func (r *ConfigurationReconciler) RemapConfiguration(ctx context.Context, cfg *networkingv1beta1.Configuration,
 	er record.EventRecorder) error {
 	for _, cidrType := range LabelCIDRTypeValues {
-		specCIDRs := selectSpecCIDRs(cfg, cidrType)
-
-		pendingDeletion, err := DeleteOrphanNetworks(ctx, r.Client, cfg, cidrType, specCIDRs)
-		if err != nil {
-			return fmt.Errorf("unable to delete orphan networks for cidr-type %q: %w", cidrType, err)
-		}
-		if pendingDeletion {
-			klog.Infof(
-				"Waiting for stale %q networks of configuration %q to be fully deleted before creating replacements",
-				cidrType, client.ObjectKeyFromObject(cfg),
-			)
+		if cidrType == LabelCIDRTypeTunneled {
 			continue
 		}
-
-		remapped := make([]networkingv1beta1.CIDR, len(specCIDRs))
-		for i, c := range specCIDRs {
-			nw, err := EnsureNetwork(ctx, r.Client, r.Scheme, er, cfg, cidrType, c)
-			if err != nil {
-				return fmt.Errorf("unable to ensure network for CIDR %q: %w", c, err)
-			}
-			remapped[i] = nw.Status.CIDR
+		if err := r.remapCIDRType(ctx, cfg, er, cidrType); err != nil {
+			return err
 		}
-		writeStatusForCIDRType(cfg, cidrType, remapped)
 	}
 	return nil
+}
+
+// reserveTunneledCIDRs reserves the tunneled CIDRs of the configuration. From the network standpoint it is
+// best-effort: the reserved CIDRs are stored in the status, while the missing ones keep the
+// ConfigurationConditionTunneledCIDRsConfigured condition false without blocking the rest of the network.
+func (r *ConfigurationReconciler) reserveTunneledCIDRs(ctx context.Context, cfg *networkingv1beta1.Configuration,
+	er record.EventRecorder) error {
+	return r.remapCIDRType(ctx, cfg, er, LabelCIDRTypeTunneled)
+}
+
+// remapCIDRType ensures the Networks of a single cidr-type and writes the resulting status array.
+// Pod and external CIDRs are remapped, and a failure is fatal (returned immediately). Tunneled CIDRs are
+// handled best-effort: a failure on a single CIDR is collected and does not prevent the others from being reserved.
+func (r *ConfigurationReconciler) remapCIDRType(ctx context.Context, cfg *networkingv1beta1.Configuration,
+	er record.EventRecorder, cidrType LabelCIDRTypeValue) error {
+	specCIDRs := selectSpecCIDRs(cfg, cidrType)
+
+	pendingDeletion, err := DeleteOrphanNetworks(ctx, r.Client, cfg, cidrType, specCIDRs)
+	if err != nil {
+		return fmt.Errorf("unable to delete orphan networks for cidr-type %q: %w", cidrType, err)
+	}
+	if pendingDeletion {
+		klog.Infof(
+			"Waiting for stale %q networks of configuration %q to be fully deleted before creating replacements",
+			cidrType, client.ObjectKeyFromObject(cfg),
+		)
+		return nil
+	}
+
+	bestEffort := cidrType == LabelCIDRTypeTunneled
+
+	remapped := make([]networkingv1beta1.CIDR, 0, len(specCIDRs))
+	var ensureErrs []error
+	for _, c := range specCIDRs {
+		nw, err := EnsureNetwork(ctx, r.Client, r.Scheme, er, cfg, cidrType, c, ensureNetworkOptions(cidrType))
+		if err != nil {
+			if !bestEffort {
+				return fmt.Errorf("unable to ensure network for CIDR %q: %w", c, err)
+			}
+			// Skip the failing CIDR and keep reserving the others.
+			klog.Errorf("Unable to ensure network for tunneled CIDR %q of configuration %q: %s",
+				c, client.ObjectKeyFromObject(cfg), err)
+			ensureErrs = append(ensureErrs, fmt.Errorf("CIDR %q: %w", c, err))
+			continue
+		}
+		// Tunneled CIDRs are not remapped: store only the ones actually reserved. A Network whose IPAM
+		// reservation has not completed yet has an empty status, and must not be written to the status.
+		if bestEffort && nw.Status.CIDR == "" {
+			continue
+		}
+		remapped = append(remapped, nw.Status.CIDR)
+	}
+
+	writeStatusForCIDRType(cfg, cidrType, remapped)
+	return errors.Join(ensureErrs...)
 }
 
 // UpdateConfigurationStatus update the configuration.
@@ -176,6 +232,8 @@ func (r *ConfigurationReconciler) UpdateConfigurationStatus(ctx context.Context,
 }
 
 func (r *ConfigurationReconciler) setConfigurationConditions(cfg *networkingv1beta1.Configuration) {
+	// The core network readiness (pod and external CIDRs) must NOT depend on the optional tunneled CIDRs:
+	// a tunneled CIDR that cannot be reserved must not block the whole network configuration.
 	remapCompleteStatus := metav1.ConditionFalse
 	reason := conditionReasonWaitingForNetworks
 	message := conditionMessageWaitingForNetworks
@@ -192,6 +250,32 @@ func (r *ConfigurationReconciler) setConfigurationConditions(cfg *networkingv1be
 		Message:            message,
 		ObservedGeneration: cfg.Generation,
 	})
+
+	tunneledStatus := metav1.ConditionFalse
+	tunneledReason := conditionReasonWaitingForTunneledCIDRs
+	tunneledMessage := conditionMessageWaitingForTunneledCIDRs
+	if isTunneledReservationComplete(cfg) {
+		tunneledStatus = metav1.ConditionTrue
+		tunneledReason = conditionReasonTunneledCIDRsConfigured
+		tunneledMessage = conditionMessageTunneledCIDRsConfigured
+	}
+
+	meta.SetStatusCondition(&cfg.Status.Conditions, metav1.Condition{
+		Type:               networkingv1beta1.ConfigurationConditionTunneledCIDRsConfigured,
+		Status:             tunneledStatus,
+		Reason:             tunneledReason,
+		Message:            tunneledMessage,
+		ObservedGeneration: cfg.Generation,
+	})
+}
+
+func ensureNetworkOptions(cidrType LabelCIDRTypeValue) EnsureNetworkOptions {
+	// Tunneled CIDRs are not remapped: they are reserved as-is and shared (ref-counted),
+	// so multiple Configurations can reserve the same CIDR.
+	if cidrType == LabelCIDRTypeTunneled {
+		return EnsureNetworkOptions{NotRemapped: true, Shared: true}
+	}
+	return EnsureNetworkOptions{}
 }
 
 func selectSpecCIDRs(cfg *networkingv1beta1.Configuration, cidrType LabelCIDRTypeValue) []networkingv1beta1.CIDR {
@@ -200,25 +284,31 @@ func selectSpecCIDRs(cfg *networkingv1beta1.Configuration, cidrType LabelCIDRTyp
 		return cfg.Spec.Remote.CIDR.Pod
 	case LabelCIDRTypeExternal:
 		return cfg.Spec.Remote.CIDR.External
+	case LabelCIDRTypeTunneled:
+		return cfg.Spec.TunneledCIDRs
 	}
 	return nil
 }
 
 func writeStatusForCIDRType(cfg *networkingv1beta1.Configuration, cidrType LabelCIDRTypeValue, remapped []networkingv1beta1.CIDR) {
-	if cfg.Status.Remote == nil {
+	if cfg.Status.Remote == nil && cidrType != LabelCIDRTypeTunneled {
 		cfg.Status.Remote = &networkingv1beta1.ClusterConfig{}
 	}
+
 	switch cidrType {
 	case LabelCIDRTypePod:
 		cfg.Status.Remote.CIDR.Pod = remapped
 	case LabelCIDRTypeExternal:
 		cfg.Status.Remote.CIDR.External = remapped
+	case LabelCIDRTypeTunneled:
+		cfg.Status.TunneledCIDRs = remapped
 	}
 }
 
-// isRemapComplete reports whether RemapConfiguration has populated the full status arrays for
-// the current spec: lengths match and no positions are empty. It does NOT check generation
-// parity — that is the job that this function gates.
+// isRemapComplete reports whether RemapConfiguration has populated the full status arrays for the pod and
+// external CIDRs of the current spec: lengths match and no positions are empty. It does NOT check generation
+// parity — that is the job that this function gates. Tunneled CIDRs are intentionally excluded: their
+// reservation is reported by ConfigurationConditionTunneledCIDRsConfigured and must not gate the network.
 func isRemapComplete(cfg *networkingv1beta1.Configuration) bool {
 	if cfg.Status.Remote == nil {
 		return false
@@ -229,6 +319,13 @@ func isRemapComplete(cfg *networkingv1beta1.Configuration) bool {
 	}
 	return cidrutils.AllNonVoid(cfg.Status.Remote.CIDR.Pod) &&
 		cidrutils.AllNonVoid(cfg.Status.Remote.CIDR.External)
+}
+
+// isTunneledReservationComplete reports whether RemapConfiguration has reserved all the tunneled CIDRs of the
+// current spec. Only reserved CIDRs are written to the status (no empty placeholder), hence all the spec CIDRs
+// are reserved as soon as the lengths match. An empty spec yields true (nothing to reserve).
+func isTunneledReservationComplete(cfg *networkingv1beta1.Configuration) bool {
+	return len(cfg.Status.TunneledCIDRs) == len(cfg.Spec.TunneledCIDRs)
 }
 
 // SetupWithManager register the ConfigurationReconciler to the manager.

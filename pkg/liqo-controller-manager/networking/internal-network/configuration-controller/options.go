@@ -17,4 +17,7 @@ package configurationcontroller
 // Options contains the configuration options for the ConfigurationController.
 type Options struct {
 	FullMasqueradeEnabled bool
+	// DefaultInterfaceName is the name of the interface where the default route points, in the gateway pod.
+	// It is used to masquerade tunnel-originated traffic egressing the default interface.
+	DefaultInterfaceName string
 }

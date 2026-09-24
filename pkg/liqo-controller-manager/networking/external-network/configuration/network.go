@@ -28,6 +28,7 @@ import (
 
 	ipamv1alpha1 "github.com/liqotech/liqo/apis/ipam/v1alpha1"
 	networkingv1beta1 "github.com/liqotech/liqo/apis/networking/v1beta1"
+	"github.com/liqotech/liqo/pkg/consts"
 	cidrutils "github.com/liqotech/liqo/pkg/utils/cidr"
 	"github.com/liqotech/liqo/pkg/utils/events"
 	"github.com/liqotech/liqo/pkg/utils/getters"
@@ -39,10 +40,20 @@ func ForgeNetworkName(cfg *networkingv1beta1.Configuration, cidrType LabelCIDRTy
 	return fmt.Sprintf("%s-%s-%s", cfg.Name, cidrType, cidrutils.EscapeForName(cidr))
 }
 
+// EnsureNetworkOptions configures the labels applied to the created Network resource.
+type EnsureNetworkOptions struct {
+	// NotRemapped marks the Network as not needing CIDR remapping (the exact CIDR is reserved).
+	NotRemapped bool
+	// Shared marks the Network as shared (ref-counted, non-exclusive), allowing multiple
+	// Networks to reserve the same CIDR.
+	Shared bool
+}
+
 // EnsureNetwork creates or updates an ipamv1alpha1.Network resource for one specific CIDR
 // of the given Configuration and cidr-type.
 func EnsureNetwork(ctx context.Context, cl client.Client, scheme *runtime.Scheme, er record.EventRecorder,
-	cfg *networkingv1beta1.Configuration, cidrType LabelCIDRTypeValue, cidr networkingv1beta1.CIDR) (*ipamv1alpha1.Network, error) {
+	cfg *networkingv1beta1.Configuration, cidrType LabelCIDRTypeValue, cidr networkingv1beta1.CIDR,
+	opts EnsureNetworkOptions) (*ipamv1alpha1.Network, error) {
 	network := &ipamv1alpha1.Network{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ForgeNetworkName(cfg, cidrType, cidr),
@@ -56,6 +67,12 @@ func EnsureNetwork(ctx context.Context, cl client.Client, scheme *runtime.Scheme
 			return err
 		}
 		network.Labels = netLabels
+		if opts.NotRemapped {
+			network.Labels[consts.NetworkNotRemappedLabelKey] = consts.NetworkNotRemappedLabelValue
+		}
+		if opts.Shared {
+			network.Labels[consts.NetworkSharedLabelKey] = consts.NetworkSharedLabelValue
+		}
 		network.Spec.CIDR = cidr
 		return ctrlutil.SetControllerReference(cfg, network, scheme)
 	})

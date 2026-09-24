@@ -20,4 +20,9 @@ const (
 
 	conditionMessageWaitingForNetworks     = "Waiting for all networks to be ready"
 	conditionMessageNetworkCIDRsConfigured = "All network CIDRs are configured"
+
+	conditionReasonWaitingForTunneledCIDRs  = "WaitingForTunneledCIDRs"
+	conditionReasonTunneledCIDRsConfigured  = "TunneledCIDRsConfigured"
+	conditionMessageWaitingForTunneledCIDRs = "Waiting for all tunneled CIDRs to be reserved"
+	conditionMessageTunneledCIDRsConfigured = "All tunneled CIDRs are reserved"
 )
