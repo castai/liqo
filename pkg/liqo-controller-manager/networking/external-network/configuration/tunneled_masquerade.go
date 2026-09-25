@@ -81,7 +81,7 @@ func (r *ConfigurationReconciler) ensureTunneledMasquerade(ctx context.Context, 
 		fwcfg.Spec.Table.Family = ptr.To(firewall.TableFamilyIPv4)
 		fwcfg.Spec.Table.Chains = []firewall.Chain{forgeTunneledMasqueradeChain(cfg)}
 
-		return controllerutil.SetOwnerReference(cfg, fwcfg, r.Scheme)
+		return controllerutil.SetControllerReference(cfg, fwcfg, r.Scheme)
 	}); err != nil {
 		return fmt.Errorf("creating or updating firewall configuration %q: %w", fwcfg.Name, err)
 	}

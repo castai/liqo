@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -203,12 +204,12 @@ func (r *ConfigurationReconciler) remapCIDRType(ctx context.Context, cfg *networ
 		nw, err := EnsureNetwork(ctx, r.Client, r.Scheme, er, cfg, cidrType, c, ensureNetworkOptions(cidrType))
 		if err != nil {
 			if !bestEffort {
-				return fmt.Errorf("unable to ensure network for CIDR %q: %w", c, err)
+				return fmt.Errorf("ensuring network for CIDR %q: %w", c, err)
 			}
 			// Skip the failing CIDR and keep reserving the others.
-			klog.Errorf("Unable to ensure network for tunneled CIDR %q of configuration %q: %s",
+			klog.Errorf("ensuring network for tunneled CIDR %q of configuration %q: %s",
 				c, client.ObjectKeyFromObject(cfg), err)
-			ensureErrs = append(ensureErrs, fmt.Errorf("CIDR %q: %w", c, err))
+			ensureErrs = append(ensureErrs, fmt.Errorf("ensuring CIDR %q: %w", c, err))
 			continue
 		}
 		// Tunneled CIDRs are not remapped: store only the ones actually reserved. A Network whose IPAM
@@ -258,6 +259,10 @@ func (r *ConfigurationReconciler) setConfigurationConditions(cfg *networkingv1be
 		tunneledStatus = metav1.ConditionTrue
 		tunneledReason = conditionReasonTunneledCIDRsConfigured
 		tunneledMessage = conditionMessageTunneledCIDRsConfigured
+	}
+	// Report the tunneled CIDRs that have been reserved (i.e. configured) so far.
+	if reserved := cidrutils.Strings(cfg.Status.TunneledCIDRs); len(reserved) > 0 {
+		tunneledMessage = fmt.Sprintf("%s: %s", tunneledMessage, strings.Join(reserved, ", "))
 	}
 
 	meta.SetStatusCondition(&cfg.Status.Conditions, metav1.Condition{
@@ -333,5 +338,6 @@ func (r *ConfigurationReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).Named(consts.CtrlConfigurationExternal).
 		For(&networkingv1beta1.Configuration{}).
 		Owns(&ipamv1alpha1.Network{}).
+		Owns(&networkingv1beta1.FirewallConfiguration{}).
 		Complete(r)
 }

@@ -64,7 +64,7 @@ func EnsureNetwork(ctx context.Context, cl client.Client, scheme *runtime.Scheme
 	op, err := resource.CreateOrUpdate(ctx, cl, network, func() error {
 		netLabels, err := ForgeNetworkLabel(cfg, cidrType)
 		if err != nil {
-			return err
+			return fmt.Errorf("forging Network labels: %w", err)
 		}
 		network.Labels = netLabels
 		if opts.NotRemapped {
@@ -77,7 +77,7 @@ func EnsureNetwork(ctx context.Context, cl client.Client, scheme *runtime.Scheme
 		return ctrlutil.SetControllerReference(cfg, network, scheme)
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("enforcing network %s/%s: %w", network.Namespace, network.Name, err)
 	}
 	if op != ctrlutil.OperationResultNone {
 		events.Event(er, cfg, fmt.Sprintf("Network %s/%s %s", cfg.Namespace, network.Name, op))
