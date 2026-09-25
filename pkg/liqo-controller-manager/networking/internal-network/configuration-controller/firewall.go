@@ -61,7 +61,7 @@ func forgeMutateFirewallConfiguration(fwcfg *networkingv1beta1.FirewallConfigura
 		}
 		fwcfg.SetLabels(labels.Merge(fwcfg.Labels, fabric.ForgeFirewallTargetLabels()))
 
-		if err := controllerutil.SetOwnerReference(cfg, fwcfg, scheme); err != nil {
+		if err := controllerutil.SetControllerReference(cfg, fwcfg, scheme); err != nil {
 			return err
 		}
 
@@ -259,7 +259,7 @@ func (r *ConfigurationReconciler) ensurePeerTunneledMasquerade(ctx context.Conte
 		}
 		fwcfg.SetLabels(labels.Merge(fwcfg.Labels, remapping.ForgeFirewallTargetLabels(remoteClusterID)))
 
-		if err := controllerutil.SetOwnerReference(cfg, fwcfg, r.Scheme); err != nil {
+		if err := controllerutil.SetControllerReference(cfg, fwcfg, r.Scheme); err != nil {
 			return err
 		}
 
