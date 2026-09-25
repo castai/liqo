@@ -37,6 +37,10 @@ var ConfigurationGroupVersionResource = GroupVersion.WithResource(ConfigurationR
 const (
 	// ConfigurationConditionNetworkCIDRsConfigured indicates whether the network CIDRs have been configured.
 	ConfigurationConditionNetworkCIDRsConfigured = "NetworkCIDRsConfigured"
+	// ConfigurationConditionTunneledCIDRsConfigured indicates whether the tunneled CIDRs have been reserved.
+	// It is separate from ConfigurationConditionNetworkCIDRsConfigured so that an unreservable tunneled CIDR
+	// does not block the rest of the network configuration.
+	ConfigurationConditionTunneledCIDRsConfigured = "TunneledCIDRsConfigured"
 )
 
 // ClusterConfigCIDR defines the CIDR of the cluster.
@@ -59,6 +63,9 @@ type ConfigurationSpec struct {
 	Local *ClusterConfig `json:"local,omitempty"`
 	// Remote network configuration (the other cluster).
 	Remote ClusterConfig `json:"remote,omitempty"`
+	// TunneledCIDRs are the CIDRs reachable through the remote cluster, routed via the gateway tunnel.
+	// They are not remapped by the IPAM: they are reserved as-is and shared.
+	TunneledCIDRs []CIDR `json:"tunneledCIDRs,omitempty"`
 }
 
 // ConfigurationStatus defines the observed state of Configuration.
@@ -67,6 +74,8 @@ type ConfigurationStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 	// Remote remapped configuration, it defines how the local cluster sees the remote cluster.
 	Remote *ClusterConfig `json:"remote,omitempty"`
+	// TunneledCIDRs are the reserved tunneled CIDRs, i.e. the reachable-through-remote CIDRs reserved by the IPAM.
+	TunneledCIDRs []CIDR `json:"tunneledCIDRs,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -77,6 +86,8 @@ type ConfigurationStatus struct {
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 // +kubebuilder:printcolumn:name="Desired External CIDR",type=string,priority=1,JSONPath=`.spec.remote.cidr.external`
 // +kubebuilder:printcolumn:name="Remapped External CIDR",type=string,priority=1,JSONPath=`.status.remote.cidr.external`
+// +kubebuilder:printcolumn:name="Desired Tunneled CIDRs",type=string,priority=1,JSONPath=`.spec.tunneledCIDRs`
+// +kubebuilder:printcolumn:name="Reserved Tunneled CIDRs",type=string,priority=1,JSONPath=`.status.tunneledCIDRs`
 // +kubebuilder:printcolumn:name="ClusterID",type=string,priority=1,JSONPath=`.metadata.labels.liqo\.io/remote-cluster-id`
 
 // Configuration contains the network configuration of a pair of clusters,

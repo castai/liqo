@@ -199,7 +199,7 @@ func forgeMutateRouteConfiguration(cfg *networkingv1beta1.Configuration,
 			},
 		}
 
-		remoteCIDRs := slices.Concat(cfg.Spec.Remote.CIDR.Pod, cfg.Spec.Remote.CIDR.External)
+		remoteCIDRs := slices.Concat(cfg.Spec.Remote.CIDR.Pod, cfg.Spec.Remote.CIDR.External, cfg.Status.TunneledCIDRs)
 		mark := gwExtMark
 		for j := range remoteCIDRs {
 			dst := &remoteCIDRs[j]

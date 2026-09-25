@@ -64,9 +64,11 @@ func (r *ConfigurationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	klog.V(4).Infof("Reconciling Configuration %q", req.NamespacedName)
 
-	err = r.ensureFirewallConfiguration(ctx, cfg, r.Options)
+	if err = r.ensureFirewallConfiguration(ctx, cfg, r.Options); err != nil {
+		return ctrl.Result{}, err
+	}
 
-	if err != nil {
+	if err = r.ensurePeerTunneledMasquerade(ctx, cfg, r.Options); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -79,5 +81,6 @@ func (r *ConfigurationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 func (r *ConfigurationReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).Named(consts.CtrlConfigurationInternal).
 		For(&networkingv1beta1.Configuration{}, builder.WithPredicates(networkingutils.AreConfigurationNetworkCIDRsConfiguredPredicate())).
+		Owns(&networkingv1beta1.FirewallConfiguration{}).
 		Complete(r)
 }

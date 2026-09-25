@@ -60,6 +60,19 @@ func AreConfigurationNetworkCIDRsEqual(cfg1, cfg2 *networkingv1beta1.Configurati
 	if !slices.Equal(cfg1.Status.Remote.CIDR.Pod, cfg2.Status.Remote.CIDR.Pod) {
 		return false
 	}
+	if !slices.Equal(cfg1.Status.TunneledCIDRs, cfg2.Status.TunneledCIDRs) {
+		return false
+	}
 
 	return true
+}
+
+// ConfigurationRemoteCIDRs returns the remote CIDRs (pod, external and tunneled) of the given Configuration
+// as seen by the local cluster, i.e. after IPAM remapping / reservation.
+func ConfigurationRemoteCIDRs(cfg *networkingv1beta1.Configuration) []networkingv1beta1.CIDR {
+	var cidrs []networkingv1beta1.CIDR
+	if cfg.Status.Remote != nil {
+		cidrs = slices.Concat(cfg.Status.Remote.CIDR.Pod, cfg.Status.Remote.CIDR.External)
+	}
+	return append(cidrs, cfg.Status.TunneledCIDRs...)
 }
