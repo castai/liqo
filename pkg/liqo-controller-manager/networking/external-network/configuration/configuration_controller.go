@@ -16,7 +16,6 @@ package configurationcontroller
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -92,11 +91,14 @@ func (r *ConfigurationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
-	// Tunneled CIDRs are optional and reserved best-effort: their failures must not prevent the rest of the
-	// network from being configured, so they are collected and returned only after the status has been updated.
+	// Reserve the tunneled CIDRs to ensure they are not currently assigned or will be assigned by the IPAM.
 	tunneledErr := r.reserveTunneledCIDRs(ctx, configuration, r.EventsRecorder)
+	if tunneledErr != nil {
+		return ctrl.Result{}, fmt.Errorf("reserving tunneled CIDRs for configuration %s: %w", req.NamespacedName, tunneledErr)
+	}
+
 	if err := r.ensureTunneledMasquerade(ctx, configuration); err != nil {
-		tunneledErr = errors.Join(tunneledErr, err)
+		return ctrl.Result{}, fmt.Errorf("ensuring tunneled masquerade for configuration %s: %w", req.NamespacedName, err)
 	}
 
 	// Update configuration conditions.
@@ -178,8 +180,8 @@ func (r *ConfigurationReconciler) reserveTunneledCIDRs(ctx context.Context, cfg 
 }
 
 // remapCIDRType ensures the Networks of a single cidr-type and writes the resulting status array.
-// Pod and external CIDRs are remapped, and a failure is fatal (returned immediately). Tunneled CIDRs are
-// handled best-effort: a failure on a single CIDR is collected and does not prevent the others from being reserved.
+// Pod and external CIDRs are remapped and stored index-aligned with the spec (empty placeholders included).
+// Tunneled CIDRs are not remapped: only the ones actually reserved are stored.
 func (r *ConfigurationReconciler) remapCIDRType(ctx context.Context, cfg *networkingv1beta1.Configuration,
 	er record.EventRecorder, cidrType LabelCIDRTypeValue) error {
 	specCIDRs := selectSpecCIDRs(cfg, cidrType)
@@ -196,32 +198,22 @@ func (r *ConfigurationReconciler) remapCIDRType(ctx context.Context, cfg *networ
 		return nil
 	}
 
-	bestEffort := cidrType == LabelCIDRTypeTunneled
-
 	remapped := make([]networkingv1beta1.CIDR, 0, len(specCIDRs))
-	var ensureErrs []error
 	for _, c := range specCIDRs {
 		nw, err := EnsureNetwork(ctx, r.Client, r.Scheme, er, cfg, cidrType, c, ensureNetworkOptions(cidrType))
 		if err != nil {
-			if !bestEffort {
-				return fmt.Errorf("ensuring network for CIDR %q: %w", c, err)
-			}
-			// Skip the failing CIDR and keep reserving the others.
-			klog.Errorf("ensuring network for tunneled CIDR %q of configuration %q: %s",
-				c, client.ObjectKeyFromObject(cfg), err)
-			ensureErrs = append(ensureErrs, fmt.Errorf("ensuring CIDR %q: %w", c, err))
-			continue
+			return fmt.Errorf("ensuring network for CIDR %q: %w", c, err)
 		}
 		// Tunneled CIDRs are not remapped: store only the ones actually reserved. A Network whose IPAM
 		// reservation has not completed yet has an empty status, and must not be written to the status.
-		if bestEffort && nw.Status.CIDR == "" {
+		if cidrType == LabelCIDRTypeTunneled && nw.Status.CIDR == "" {
 			continue
 		}
 		remapped = append(remapped, nw.Status.CIDR)
 	}
 
 	writeStatusForCIDRType(cfg, cidrType, remapped)
-	return errors.Join(ensureErrs...)
+	return nil
 }
 
 // UpdateConfigurationStatus update the configuration.
