@@ -209,6 +209,7 @@ func runRootCommand(ctx context.Context, c *Opts) error {
 		DisableIPReflection:  c.DisableIPReflection,
 		LocalPodCIDRs:        c.LocalPodCIDRs,
 		InformerResyncPeriod: c.InformerResyncPeriod,
+		FallbackGracePeriod:  c.FallbackGracePeriod,
 
 		ReflectorsConfigs: reflectorsConfigs,
 		CustomResources:   customResources,

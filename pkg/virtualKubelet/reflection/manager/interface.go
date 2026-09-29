@@ -16,6 +16,7 @@ package manager
 
 import (
 	"context"
+	"time"
 
 	"k8s.io/apimachinery/pkg/types"
 
@@ -28,8 +29,12 @@ type Manager interface {
 	With(reflector Reflector) Manager
 	// WithNamespaceHandler add the given NamespaceHandler to the manager.
 	WithNamespaceHandler(handler NamespaceHandler) Manager
-	// Start starts the reflection manager. It panics if executed twice.
-	Start(ctx context.Context)
+	// WithFallbackGracePeriod configures the grace period before the items of a stopped namespace are
+	// re-enqueued for fallback processing. A zero value disables the delay (immediate re-enqueue).
+	WithFallbackGracePeriod(period time.Duration) Manager
+	// Start starts the reflection manager. It returns an error if the namespace handler fails to
+	// initialize, to avoid running with an undefined reflection state. It panics if executed twice.
+	Start(ctx context.Context) error
 	// Resync triggers a resync of the reflectors.
 	Resync() error
 
@@ -84,5 +89,16 @@ type FallbackReflector interface {
 // for a Namespace that has been marked for resources reflection.
 type NamespaceHandler interface {
 	// Start starts the NamespaceHandler.
-	Start(context.Context, NamespaceStartStopper)
+	Start(context.Context, NamespaceStartStopper) error
+}
+
+// NamespaceMapper is implemented by NamespaceHandlers able to report whether a local namespace is
+// currently mapped to a remote namespace in accepted phase. Fallback reflectors may use it to avoid
+// erroneously rejecting pods whose namespace reflection is only transiently stopped. An error
+// indicates the mapping state is uncertain: callers should retry rather than taking irreversible
+// actions on potentially incomplete information.
+type NamespaceMapper interface {
+	// IsNamespaceMapped returns whether the given local namespace is currently mapped to a remote namespace
+	// in accepted phase.
+	IsNamespaceMapped(namespace string) (bool, error)
 }
