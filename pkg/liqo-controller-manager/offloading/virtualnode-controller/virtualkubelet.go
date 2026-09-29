@@ -235,13 +235,13 @@ func (r *VirtualNodeReconciler) ensureVirtualKubeletDeploymentAbsence(
 		klog.Info(msg)
 		r.EventsRecorder.Event(virtualNode, "Normal", "VkDeleted", msg)
 
-		if err := r.Client.Delete(ctx, virtualKubeletDeployment); err != nil {
-			return err
+		if err := client.IgnoreNotFound(r.Client.Delete(ctx, virtualKubeletDeployment)); err != nil {
+			return fmt.Errorf("deleting virtual-kubelet Deployment: %w", err)
 		}
 	}
 
 	if err := vkutils.CheckVirtualKubeletPodAbsence(ctx, r.Client, virtualNode); err != nil {
-		return err
+		return fmt.Errorf("checking virtual-kubelet Pod absence: %w", err)
 	}
 
 	crbName := vkforge.VirtualKubeletClusterRoleBindingName(virtualNode.Name)

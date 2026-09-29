@@ -163,9 +163,11 @@ func (nh *Handler) checkNamespaceMapUniqueness(_ interface{}) bool {
 // in accepted phase. Fallback reflectors use it to avoid erroneously rejecting pods belonging to
 // namespaces whose reflection is only transiently stopped (e.g., during the startup of the reflection
 // manager, or a momentary flapping of the NamespaceMap).
-// An error (e.g., listing failure, or no NamespaceMap known yet) marks the state as uncertain: callers are
-// expected to retry instead of taking irreversible actions on potentially incomplete information. Multiple
-// NamespaceMaps (possible during delete+recreate cycles) are checked, rather than requiring uniqueness.
+// An error marks the state as uncertain: callers are expected to retry instead of taking irreversible
+// actions on potentially incomplete information. This covers a listing failure, the absence of the
+// NamespaceMap, the presence of multiple NamespaceMaps (which should never happen, as exactly one is
+// expected per cluster), and a NamespaceMap that is being deleted (it may still report an accepted
+// mapping while draining).
 // The absence of the NamespaceMap is transient by construction during the virtual kubelet lifetime: the
 // virtualnode controller recreates it whenever missing while the VirtualNode is alive, and, when tearing the
 // peering down, it first drains the pods and deletes the virtual kubelet deployment, and only afterwards
@@ -178,18 +180,27 @@ func (nh *Handler) IsNamespaceMapped(namespace string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("failed to list NamespaceMaps: %w", err)
 	}
-	if len(namespaceMaps) == 0 {
+
+	switch len(namespaceMaps) {
+	case 0:
+		// The absence is transient, but not authoritative: retry rather than reject.
 		return false, fmt.Errorf("no NamespaceMap is present at the moment")
+	case 1:
+		// Expected: exactly one NamespaceMap per cluster.
+	default:
+		// Should never happen, as the rest of the system assumes a unique NamespaceMap: treat as uncertain.
+		return false, fmt.Errorf("multiple NamespaceMaps present for the same cluster, expected exactly one")
 	}
 
-	for i := range namespaceMaps {
-		if !namespaceMaps[i].DeletionTimestamp.IsZero() {
-			continue
-		}
-		mapping, found := namespaceMaps[i].Status.CurrentMapping[namespace]
-		if found && mapping.Phase == offloadingv1beta1.MappingAccepted {
-			return true, nil
-		}
+	namespaceMap := namespaceMaps[0]
+	if !namespaceMap.DeletionTimestamp.IsZero() {
+		// The NamespaceMap is being torn down, and may still report an accepted mapping while draining:
+		// the state is uncertain, retry rather than reject.
+		return false, fmt.Errorf("the NamespaceMap is terminating")
+	}
+
+	if mapping, found := namespaceMap.Status.CurrentMapping[namespace]; found && mapping.Phase == offloadingv1beta1.MappingAccepted {
+		return true, nil
 	}
 	return false, nil
 }

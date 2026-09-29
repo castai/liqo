@@ -20,6 +20,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 
 	offloadingv1beta1 "github.com/liqotech/liqo/apis/offloading/v1beta1"
 	liqoclient "github.com/liqotech/liqo/pkg/client/clientset/versioned/fake"
@@ -117,11 +118,13 @@ var _ = Describe("NamespaceMapEventHandler tests", func() {
 	})
 
 	Describe("IsNamespaceMapped", func() {
-		createNamespaceMap := func(remoteClusterID string, mapping map[string]offloadingv1beta1.RemoteNamespaceStatus) {
+		createNamespaceMap := func(name, remoteClusterID string, deletionTimestamp *metav1.Time,
+			mapping map[string]offloadingv1beta1.RemoteNamespaceStatus) {
 			nm := &offloadingv1beta1.NamespaceMap{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "nsmap",
-					Namespace: "ns",
+					Name:              name,
+					Namespace:         "ns",
+					DeletionTimestamp: deletionTimestamp,
 					Labels: map[string]string{
 						liqoconst.RemoteClusterID:             remoteClusterID,
 						liqoconst.ReplicationDestinationLabel: remoteClusterID,
@@ -143,7 +146,7 @@ var _ = Describe("NamespaceMapEventHandler tests", func() {
 
 		When("the only NamespaceMap belongs to a different peering", func() {
 			BeforeEach(func() {
-				createNamespaceMap("other-cluster", map[string]offloadingv1beta1.RemoteNamespaceStatus{
+				createNamespaceMap("nsmap", "other-cluster", nil, map[string]offloadingv1beta1.RemoteNamespaceStatus{
 					"localNs1": {RemoteNamespace: "remoteNs1", Phase: offloadingv1beta1.MappingAccepted},
 				})
 			})
@@ -158,7 +161,7 @@ var _ = Describe("NamespaceMapEventHandler tests", func() {
 
 		When("a NamespaceMap is present", func() {
 			BeforeEach(func() {
-				createNamespaceMap(string(forge.RemoteCluster), map[string]offloadingv1beta1.RemoteNamespaceStatus{
+				createNamespaceMap("nsmap", string(forge.RemoteCluster), nil, map[string]offloadingv1beta1.RemoteNamespaceStatus{
 					"localNs1": {RemoteNamespace: "remoteNs1", Phase: offloadingv1beta1.MappingAccepted},
 					"localNs2": {RemoteNamespace: "remoteNs2", Phase: offloadingv1beta1.MappingCreationLoopBackOff},
 				})
@@ -184,6 +187,36 @@ var _ = Describe("NamespaceMapEventHandler tests", func() {
 				mapped, err := nmh.IsNamespaceMapped("localNs3")
 				Expect(err).ToNot(HaveOccurred())
 				Expect(mapped).To(BeFalse())
+			})
+		})
+
+		When("multiple NamespaceMaps are present", func() {
+			It("should return an error, as the state is unexpected", func() {
+				createNamespaceMap("nsmap-1", string(forge.RemoteCluster), nil, map[string]offloadingv1beta1.RemoteNamespaceStatus{
+					"localNs1": {RemoteNamespace: "remoteNs1", Phase: offloadingv1beta1.MappingAccepted},
+				})
+				createNamespaceMap("nsmap-2", string(forge.RemoteCluster), nil, map[string]offloadingv1beta1.RemoteNamespaceStatus{
+					"localNs1": {RemoteNamespace: "remoteNs1", Phase: offloadingv1beta1.MappingAccepted},
+				})
+
+				Eventually(func() error {
+					_, err := nmh.IsNamespaceMapped("localNs1")
+					return err
+				}).Should(MatchError(ContainSubstring("multiple NamespaceMaps")))
+			})
+		})
+
+		When("the NamespaceMap is terminating", func() {
+			It("should return an error, as the state is uncertain", func() {
+				createNamespaceMap("nsmap", string(forge.RemoteCluster), ptr.To(metav1.Now()),
+					map[string]offloadingv1beta1.RemoteNamespaceStatus{
+						"localNs1": {RemoteNamespace: "remoteNs1", Phase: offloadingv1beta1.MappingAccepted},
+					})
+
+				Eventually(func() error {
+					_, err := nmh.IsNamespaceMapped("localNs1")
+					return err
+				}).Should(MatchError(ContainSubstring("terminating")))
 			})
 		})
 	})
