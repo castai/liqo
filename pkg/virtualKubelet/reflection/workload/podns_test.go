@@ -58,13 +58,15 @@ import (
 type fakePodMetrics struct {
 	metricsv1beta1.PodMetricsInterface
 
-	items    []metricsapi.PodMetrics
-	selector string
+	items     []metricsapi.PodMetrics
+	selector  string
+	listCalls int
 }
 
 //nolint:gocritic // hugeParam: signature imposed by the metricsv1beta1.PodMetricsInterface interface.
 func (f *fakePodMetrics) List(_ context.Context, opts metav1.ListOptions) (*metricsapi.PodMetricsList, error) {
 	f.selector = opts.LabelSelector
+	f.listCalls++
 	return &metricsapi.PodMetricsList{Items: f.items}, nil
 }
 
@@ -123,7 +125,8 @@ var _ = Describe("Namespaced Pod Reflection Tests", func() {
 				Type:       root.DefaultReflectorsTypes[resources.Pod],
 			}
 			rfl := workload.NewPodReflector(nil, metricsFactory,
-				&workload.PodReflectorConfig{forge.APIServerSupportTokenAPI, false, "", "", fakeAPIServerRemapping([]string{""}), netConfig}, &reflectorConfig)
+				&workload.PodReflectorConfig{forge.APIServerSupportTokenAPI, false, "", "", fakeAPIServerRemapping([]string{""}), netConfig,
+					time.Minute}, &reflectorConfig)
 			rfl.Start(ctx, options.New(client, factory.Core().V1().Pods()).WithEventBroadcaster(broadcaster))
 			reflector = rfl.NewNamespaced(options.NewNamespaced().
 				WithLocal(LocalNamespace, client, factory).WithLiqoLocal(liqoClient, liqoFactory).
