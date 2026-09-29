@@ -49,6 +49,10 @@ const (
 	DefaultMetricsProxyCacheTTL = 10 * time.Second
 	// DefaultStatsSummaryCacheTTL is the default time-to-live of the cached node stats summary.
 	DefaultStatsSummaryCacheTTL = 20 * time.Second
+
+	// DefaultFallbackGracePeriod is the default delay before the objects of a stopped namespace are
+	// re-enqueued for fallback reflection.
+	DefaultFallbackGracePeriod = 10 * time.Second
 )
 
 // DefaultReflectorsWorkers contains the default number of workers for each reflected resource.
@@ -95,6 +99,9 @@ type Opts struct {
 	TenantNamespace      string
 	LiqoNamespace        string
 	InformerResyncPeriod time.Duration
+	// FallbackGracePeriod is the delay before the items of a stopped namespace are re-enqueued for
+	// fallback processing. A zero value disables the delay (immediate re-enqueue).
+	FallbackGracePeriod time.Duration
 
 	HomeCluster         argsutils.ClusterIDFlags
 	ForeignCluster      argsutils.ClusterIDFlags
@@ -157,6 +164,7 @@ func NewOpts() *Opts {
 		TenantNamespace:      corev1.NamespaceDefault,
 		LiqoNamespace:        consts.DefaultLiqoNamespace,
 		InformerResyncPeriod: DefaultInformerResyncPeriod,
+		FallbackGracePeriod:  DefaultFallbackGracePeriod,
 
 		DisableIPReflection: false,
 
