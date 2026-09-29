@@ -84,6 +84,9 @@ type InitConfig struct {
 	RemoteRealLoadBalancerClassName string
 	EnableMetrics                   bool
 
+	// StatsSummaryCacheTTL is the time-to-live of the cached node stats summary.
+	StatsSummaryCacheTTL time.Duration
+
 	HomeAPIServerHost string
 	HomeAPIServerPort string
 
@@ -156,6 +159,8 @@ func NewLiqoProvider(ctx context.Context, cfg *InitConfig, eb record.EventBroadc
 			return result, nil
 		},
 		NetConfiguration: cfg.NetConfiguration,
+
+		StatsSummaryCacheTTL: cfg.StatsSummaryCacheTTL,
 	}
 
 	podreflector := workload.NewPodReflector(cfg.RemoteConfig, remoteMetricsClient, &podReflectorConfig, ptr.To(cfg.ReflectorsConfigs[resources.Pod]))
