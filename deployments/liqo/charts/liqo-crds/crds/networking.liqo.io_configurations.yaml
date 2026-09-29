@@ -36,6 +36,14 @@ spec:
       name: Remapped External CIDR
       priority: 1
       type: string
+    - jsonPath: .spec.tunneledCIDRs
+      name: Desired Tunneled CIDRs
+      priority: 1
+      type: string
+    - jsonPath: .status.tunneledCIDRs
+      name: Reserved Tunneled CIDRs
+      priority: 1
+      type: string
     - jsonPath: .metadata.labels.liqo\.io/remote-cluster-id
       name: ClusterID
       priority: 1
@@ -112,6 +120,15 @@ spec:
                         type: array
                     type: object
                 type: object
+              tunneledCIDRs:
+                description: |-
+                  TunneledCIDRs are the CIDRs reachable through the remote cluster, routed via the gateway tunnel.
+                  They are not remapped by the IPAM: they are reserved as-is and shared.
+                items:
+                  description: CIDR defines a syntax validated CIDR.
+                  format: cidr
+                  type: string
+                type: array
             type: object
           status:
             description: ConfigurationStatus defines the observed state of Configuration.
@@ -196,6 +213,14 @@ spec:
                         type: array
                     type: object
                 type: object
+              tunneledCIDRs:
+                description: TunneledCIDRs are the reserved tunneled CIDRs, i.e. the
+                  reachable-through-remote CIDRs reserved by the IPAM.
+                items:
+                  description: CIDR defines a syntax validated CIDR.
+                  format: cidr
+                  type: string
+                type: array
             type: object
         type: object
     served: true
