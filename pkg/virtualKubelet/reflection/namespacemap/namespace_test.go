@@ -81,6 +81,39 @@ var _ = Describe("NamespaceMapEventHandler tests", func() {
 		It("should set the reflection manager", func() {
 			Expect(nmh.namespaceStartStopper).ToNot(BeNil())
 		})
+
+		When("a NamespaceMap is already present", func() {
+			It("should start the reflection for the accepted mappings before returning", func() {
+				client := liqoclient.NewSimpleClientset() //nolint:staticcheck // NewClientset is not generated in this repo (requires --with-applyconfig).
+				nm := &offloadingv1beta1.NamespaceMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "nsmap",
+						Namespace: "ns",
+						Labels: map[string]string{
+							liqoconst.RemoteClusterID:             string(forge.RemoteCluster),
+							liqoconst.ReplicationDestinationLabel: string(forge.RemoteCluster),
+						},
+					},
+					Status: offloadingv1beta1.NamespaceMapStatus{
+						CurrentMapping: map[string]offloadingv1beta1.RemoteNamespaceStatus{
+							"localNs1": {RemoteNamespace: "remoteNs1", Phase: offloadingv1beta1.MappingAccepted},
+							"localNs2": {RemoteNamespace: "remoteNs2", Phase: offloadingv1beta1.MappingCreationLoopBackOff},
+						},
+					},
+				}
+				_, err := client.OffloadingV1beta1().NamespaceMaps("ns").Create(context.Background(), nm, metav1.CreateOptions{})
+				Expect(err).ToNot(HaveOccurred())
+
+				mgr := fake.NewNamespaceStartStopper()
+				h := NewHandler(client, "ns", 0)
+				Expect(h.Start(context.Background(), mgr)).ToNot(HaveOccurred())
+
+				// Start must have delivered the initial events before returning, so the accepted mapping is
+				// reflected without any further event (i.e. no Eventually is needed here).
+				Expect(mgr.StartNamespaceCalled).To(BeIdenticalTo(1))
+				Expect(mgr.StartNamespaceArgumentsCall).To(HaveKeyWithValue("localNs1", "remoteNs1"))
+			})
+		})
 	})
 
 	Describe("IsNamespaceMapped", func() {

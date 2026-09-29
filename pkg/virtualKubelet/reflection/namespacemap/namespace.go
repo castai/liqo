@@ -61,7 +61,8 @@ func NewHandler(localLiqoClient liqoclient.Interface, namespace string, resyncPe
 // i.e., for the initial events to be delivered, after the informer caches are synced.
 const registrationSyncTimeout = 30 * time.Second
 
-// Start adds the handler to the informer, starts the informer, and waits for chache sync.
+// Start adds the handler to the informer, starts the informer, and waits for the informer store to be
+// synced and the initial events to be delivered to the registered handler.
 // It returns an error in case the registered handler failed to receive the initial events within
 // the timeout, as continuing would leave the namespace reflection in an undefined state.
 func (nh *Handler) Start(ctx context.Context, namespaceStartStopper manager.NamespaceStartStopper) error {
@@ -83,14 +84,14 @@ func (nh *Handler) Start(ctx context.Context, namespaceStartStopper manager.Name
 	nh.informerFactory.Start(ctx.Done())
 	nh.informerFactory.WaitForCacheSync(ctx.Done())
 
-	// The factory-level cache sync only guarantees that the informer store is populated, but not that the
-	// event handler has been invoked for the pre-existing resources. Wait also for the registration to be
-	// synced, i.e. for the initial events to be delivered, so that StartNamespace is guaranteed to have been
-	// invoked for all accepted mappings before the reflection manager is marked as ready. Otherwise, pods of
-	// managed namespaces could be spuriously processed by the fallback reflectors and wrongly rejected.
+	// The handler registration sync is bounded by registrationSyncTimeout. As the registration HasSynced reports
+	// both that the informer store has been synced (parent) and that all the pre-sync events have been delivered,
+	// it subsumes the informer cache sync. Waiting for it guarantees that StartNamespace has been invoked for all
+	// the accepted mappings before the reflection manager is marked as ready. Otherwise, pods of managed namespaces
+	// could be spuriously processed by the fallback reflectors and wrongly rejected.
 	regCtx, cancel := context.WithTimeout(ctx, registrationSyncTimeout)
 	defer cancel()
-	if !cache.WaitForCacheSync(regCtx.Done(), registration.HasSynced) {
+	if !cache.WaitForNamedCacheSyncWithContext(regCtx, registration.HasSynced) {
 		// Do not treat an orderly shutdown as an error.
 		if ctx.Err() != nil {
 			return nil
