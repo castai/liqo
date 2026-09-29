@@ -16,6 +16,7 @@ package namespacemap
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -56,8 +57,15 @@ func NewHandler(localLiqoClient liqoclient.Interface, namespace string, resyncPe
 	}
 }
 
-// Start adds the handler to the informer, starts the informer, and waits for chache sync.
-func (nh *Handler) Start(ctx context.Context, namespaceStartStopper manager.NamespaceStartStopper) {
+// registrationSyncTimeout is the maximum time to wait for the handler registration to be synced,
+// i.e., for the initial events to be delivered, after the informer caches are synced.
+const registrationSyncTimeout = 30 * time.Second
+
+// Start adds the handler to the informer, starts the informer, and waits for the informer store to be
+// synced and the initial events to be delivered to the registered handler.
+// It returns an error in case the registered handler failed to receive the initial events within
+// the timeout, as continuing would leave the namespace reflection in an undefined state.
+func (nh *Handler) Start(ctx context.Context, namespaceStartStopper manager.NamespaceStartStopper) error {
 	klog.Info("Starting the namespaceMap handler...")
 
 	nh.namespaceStartStopper = namespaceStartStopper
@@ -70,13 +78,29 @@ func (nh *Handler) Start(ctx context.Context, namespaceStartStopper manager.Name
 			DeleteFunc: nh.onDeleteNamespaceMap,
 		},
 	}
-	_, err := nh.informerFactory.Offloading().V1beta1().NamespaceMaps().Informer().AddEventHandler(eh)
+	registration, err := nh.informerFactory.Offloading().V1beta1().NamespaceMaps().Informer().AddEventHandler(eh)
 	utilruntime.Must(err)
 
 	nh.informerFactory.Start(ctx.Done())
 	nh.informerFactory.WaitForCacheSync(ctx.Done())
 
+	// The handler registration sync is bounded by registrationSyncTimeout. As the registration HasSynced reports
+	// both that the informer store has been synced (parent) and that all the pre-sync events have been delivered,
+	// it subsumes the informer cache sync. Waiting for it guarantees that StartNamespace has been invoked for all
+	// the accepted mappings before the reflection manager is marked as ready. Otherwise, pods of managed namespaces
+	// could be spuriously processed by the fallback reflectors and wrongly rejected.
+	regCtx, cancel := context.WithTimeout(ctx, registrationSyncTimeout)
+	defer cancel()
+	if !cache.WaitForNamedCacheSyncWithContext(regCtx, registration.HasSynced) {
+		// Do not treat an orderly shutdown as an error.
+		if ctx.Err() != nil {
+			return nil
+		}
+		return fmt.Errorf("timed out waiting for the namespaceMap handler registration to sync")
+	}
+
 	klog.Info("namespaceMap handler started")
+	return nil
 }
 
 func (nh *Handler) onAddNamespaceMap(obj interface{}) {
@@ -133,6 +157,52 @@ func (nh *Handler) checkNamespaceMapUniqueness(_ interface{}) bool {
 	}
 
 	return true
+}
+
+// IsNamespaceMapped returns whether the given local namespace is currently mapped to a remote namespace
+// in accepted phase. Fallback reflectors use it to avoid erroneously rejecting pods belonging to
+// namespaces whose reflection is only transiently stopped (e.g., during the startup of the reflection
+// manager, or a momentary flapping of the NamespaceMap).
+// An error marks the state as uncertain: callers are expected to retry instead of taking irreversible
+// actions on potentially incomplete information. This covers a listing failure, the absence of the
+// NamespaceMap, the presence of multiple NamespaceMaps (which should never happen, as exactly one is
+// expected per cluster), and a NamespaceMap that is being deleted (it may still report an accepted
+// mapping while draining).
+// The absence of the NamespaceMap is transient by construction during the virtual kubelet lifetime: the
+// virtualnode controller recreates it whenever missing while the VirtualNode is alive, and, when tearing the
+// peering down, it first drains the pods and deletes the virtual kubelet deployment, and only afterwards
+// deletes the NamespaceMap (hence no pod is left for the fallback reflector to act upon).
+func (nh *Handler) IsNamespaceMapped(namespace string) (bool, error) {
+	namespaceMaps, err := nh.lister.List(labels.SelectorFromSet(labels.Set{
+		liqoconst.RemoteClusterID:             string(forge.RemoteCluster),
+		liqoconst.ReplicationDestinationLabel: string(forge.RemoteCluster),
+	}))
+	if err != nil {
+		return false, fmt.Errorf("failed to list NamespaceMaps: %w", err)
+	}
+
+	switch len(namespaceMaps) {
+	case 0:
+		// The absence is transient, but not authoritative: retry rather than reject.
+		return false, fmt.Errorf("no NamespaceMap is present at the moment")
+	case 1:
+		// Expected: exactly one NamespaceMap per cluster.
+	default:
+		// Should never happen, as the rest of the system assumes a unique NamespaceMap: treat as uncertain.
+		return false, fmt.Errorf("multiple NamespaceMaps present for the same cluster, expected exactly one")
+	}
+
+	namespaceMap := namespaceMaps[0]
+	if !namespaceMap.DeletionTimestamp.IsZero() {
+		// The NamespaceMap is being torn down, and may still report an accepted mapping while draining:
+		// the state is uncertain, retry rather than reject.
+		return false, fmt.Errorf("the NamespaceMap is terminating")
+	}
+
+	if mapping, found := namespaceMap.Status.CurrentMapping[namespace]; found && mapping.Phase == offloadingv1beta1.MappingAccepted {
+		return true, nil
+	}
+	return false, nil
 }
 
 func (nh *Handler) startNamespace(localNs string, remoteNamespaceStatus offloadingv1beta1.RemoteNamespaceStatus) {
