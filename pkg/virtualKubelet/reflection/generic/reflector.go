@@ -67,6 +67,11 @@ type reflector struct {
 
 	concurrencyMode ConcurrencyMode
 	reflectionType  offloadingv1beta1.ReflectionType
+
+	// fallbackGracePeriod is the delay before the items of a stopped namespace are re-enqueued for
+	// fallback processing. It is populated from the reflector options at Start time; a zero value
+	// disables the delay (immediate re-enqueue).
+	fallbackGracePeriod time.Duration
 }
 
 // String returns the name of the reflector.
@@ -117,6 +122,7 @@ func newReflector(name string, namespaced NamespacedReflectorFactoryFunc, fallba
 // Start starts the reflector.
 func (gr *reflector) Start(ctx context.Context, opts *options.ReflectorOpts) {
 	klog.Infof("Starting the %v reflector with %v workers (policy: %v)", gr.name, gr.workers, gr.reflectionType)
+	gr.fallbackGracePeriod = opts.FallbackGracePeriod
 	gr.fallback = gr.fallbackFactory(opts.WithHandlerFactory(gr.handlers))
 
 	for i := uint(0); i < gr.workers; i++ {
@@ -172,10 +178,11 @@ func (gr *reflector) StopNamespace(local, remote string) {
 
 	delete(gr.reflectors, local)
 
-	// In case a fallback reflector exists, re-enqueue all the elements returned for the given namespace.
+	// In case a fallback reflector exists, re-enqueue all the elements returned for the given namespace,
+	// after a grace period to account for transient flapping of the namespace reflection.
 	if gr.fallback != nil {
 		for _, key := range gr.fallback.Keys(local, remote) {
-			gr.workqueue.Add(key)
+			gr.workqueue.AddAfter(key, gr.fallbackGracePeriod)
 		}
 	}
 

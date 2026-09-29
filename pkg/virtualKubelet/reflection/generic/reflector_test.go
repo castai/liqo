@@ -16,6 +16,7 @@ package generic
 
 import (
 	"context"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -104,22 +105,26 @@ var _ = Describe("Reflector tests", func() {
 
 			Context("the reflector is started", func() {
 				var (
-					opts   options.ReflectorOpts
+					ropts  options.ReflectorOpts
 					ctx    context.Context
 					cancel context.CancelFunc
 				)
 
 				BeforeEach(func() {
 					ctx, cancel = context.WithCancel(context.Background())
-					workers = 0 /* do not start any child go routine */
-					opts = options.ReflectorOpts{LocalClient: fake.NewSimpleClientset()}
+					workers = 0                                                           /* do not start any child go routine */
+					ropts = options.ReflectorOpts{LocalClient: fake.NewSimpleClientset()} //nolint:staticcheck // deprecated, adequate for tests
 				})
-				JustBeforeEach(func() { rfl.Start(ctx, &opts) })
+				JustBeforeEach(func() { rfl.Start(ctx, &ropts) })
 				AfterEach(func() { cancel() })
+
+				It("should disable the fallback grace period when not configured", func() {
+					Expect(rfl.(*reflector).fallbackGracePeriod).To(BeZero())
+				})
 
 				It("should create a new fallback reflector", func() { Expect(rfl.(*reflector).fallback).To(Equal(fbrfl)) })
 				It("should correctly propagate the reflector options", func() {
-					Expect(fbrfl.Opts.LocalClient).To(Equal(opts.LocalClient))
+					Expect(fbrfl.Opts.LocalClient).To(Equal(ropts.LocalClient))
 					Expect(fbrfl.Opts.HandlerFactory).ToNot(BeNil())
 				})
 
@@ -149,16 +154,28 @@ var _ = Describe("Reflector tests", func() {
 					})
 
 					Context("the same namespace is stopped", func() {
-						JustBeforeEach(func() { rfl.StopNamespace(localNamespace, remoteNamespace) })
+						JustBeforeEach(func() {
+							// Drain the item enqueued by StartNamespace, so that the ones enqueued by
+							// StopNamespace are not discarded by the workqueue deduplication logic.
+							key, _ := rfl.(*reflector).workqueue.Get()
+							rfl.(*reflector).workqueue.Done(key)
+							rfl.StopNamespace(localNamespace, remoteNamespace)
+						})
 						It("should remove the namespaced reflector", func() {
 							Expect(rfl.(*reflector).reflectors).ToNot(HaveKeyWithValue(localNamespace, nsrfl))
 						})
 
 						When("the fallback handler is set", func() {
-							It("should enqueue the returned elements", func() {
-								Expect(rfl.(*reflector).workqueue.Len()).To(BeNumerically("==", 1))
-								key, _ := rfl.(*reflector).workqueue.Get()
+							BeforeEach(func() { ropts.WithFallbackGracePeriod(50 * time.Millisecond) })
+
+							It("should enqueue the returned elements after the grace period", func() {
+								// The item enqueued by StopNamespace is delayed, hence the Get blocks until the
+								// grace period has elapsed.
+								start := time.Now()
+								key, shutdown := rfl.(*reflector).workqueue.Get()
+								Expect(shutdown).To(BeFalse())
 								Expect(key).To(Equal(types.NamespacedName{Namespace: localNamespace, Name: remoteNamespace}))
+								Expect(time.Since(start)).To(BeNumerically(">=", 50*time.Millisecond))
 							})
 						})
 					})
