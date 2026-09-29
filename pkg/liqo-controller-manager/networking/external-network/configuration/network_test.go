@@ -19,6 +19,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -29,6 +30,7 @@ import (
 
 	ipamv1alpha1 "github.com/liqotech/liqo/apis/ipam/v1alpha1"
 	networkingv1beta1 "github.com/liqotech/liqo/apis/networking/v1beta1"
+	"github.com/liqotech/liqo/apis/networking/v1beta1/firewall"
 	"github.com/liqotech/liqo/pkg/consts"
 )
 
@@ -127,6 +129,96 @@ var _ = Describe("Configuration networks", func() {
 
 		Expect(r.RemapConfiguration(ctx, cfg, r.EventsRecorder)).To(Succeed())
 		Expect(cl.Get(ctx, canonicalKey, &ipamv1alpha1.Network{})).To(Succeed())
+	})
+
+	It("reserves tunneled CIDRs as not-remapped and shared networks", func() {
+		cfg.Spec.TunneledCIDRs = []networkingv1beta1.CIDR{"8.8.8.8/32"}
+
+		cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cfg).Build()
+		r := &ConfigurationReconciler{
+			Client:         cl,
+			Scheme:         scheme,
+			EventsRecorder: record.NewFakeRecorder(16),
+		}
+
+		Expect(r.reserveTunneledCIDRs(ctx, cfg, r.EventsRecorder)).To(Succeed())
+
+		key := client.ObjectKey{Namespace: cfg.Namespace, Name: ForgeNetworkName(cfg, LabelCIDRTypeTunneled, "8.8.8.8/32")}
+		nw := &ipamv1alpha1.Network{}
+		Expect(cl.Get(ctx, key, nw)).To(Succeed())
+		Expect(nw.Labels).To(HaveKeyWithValue(consts.NetworkNotRemappedLabelKey, consts.NetworkNotRemappedLabelValue))
+		Expect(nw.Labels).To(HaveKeyWithValue(consts.NetworkSharedLabelKey, consts.NetworkSharedLabelValue))
+		Expect(nw.Labels).To(HaveKeyWithValue(LabelCIDRType, string(LabelCIDRTypeTunneled)))
+		Expect(nw.Spec.CIDR).To(Equal(networkingv1beta1.CIDR("8.8.8.8/32")))
+	})
+
+	It("mirrors the reserved tunneled CIDR into the configuration status", func() {
+		cfg.Spec.TunneledCIDRs = []networkingv1beta1.CIDR{"8.8.8.8/32"}
+
+		nw := &ipamv1alpha1.Network{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      ForgeNetworkName(cfg, LabelCIDRTypeTunneled, "8.8.8.8/32"),
+				Namespace: cfg.Namespace,
+				Labels: map[string]string{
+					consts.RemoteClusterID: cfg.Labels[consts.RemoteClusterID],
+					LabelCIDRType:          string(LabelCIDRTypeTunneled),
+				},
+				OwnerReferences: []metav1.OwnerReference{buildOwnerReference(cfg)},
+			},
+			Spec:   ipamv1alpha1.NetworkSpec{CIDR: "8.8.8.8/32"},
+			Status: ipamv1alpha1.NetworkStatus{CIDR: "8.8.8.8/32"},
+		}
+
+		cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cfg, nw).Build()
+		r := &ConfigurationReconciler{
+			Client:         cl,
+			Scheme:         scheme,
+			EventsRecorder: record.NewFakeRecorder(16),
+		}
+
+		Expect(r.reserveTunneledCIDRs(ctx, cfg, r.EventsRecorder)).To(Succeed())
+		Expect(cfg.Status.TunneledCIDRs).To(Equal([]networkingv1beta1.CIDR{"8.8.8.8/32"}))
+	})
+
+	It("forges a MASQUERADE rule per reserved tunneled CIDR on tunnel egress", func() {
+		cfg.Status.TunneledCIDRs = []networkingv1beta1.CIDR{"8.8.8.8/32"}
+
+		chain := forgeTunneledMasqueradeChain(cfg)
+		Expect(chain.Hook).To(HaveValue(Equal(firewall.ChainHookPostrouting)))
+		Expect(chain.Type).To(Equal(firewall.ChainTypeNAT))
+		Expect(chain.Rules.NatRules).To(HaveLen(1))
+		Expect(chain.Rules.NatRules[0].NatType).To(Equal(firewall.NatTypeMasquerade))
+		Expect(chain.Rules.NatRules[0].Match).To(HaveLen(2))
+	})
+
+	It("does not block the network CIDRs condition when a tunneled CIDR is not reserved", func() {
+		cfg.Spec.Remote = networkingv1beta1.ClusterConfig{
+			CIDR: networkingv1beta1.ClusterConfigCIDR{
+				Pod:      []networkingv1beta1.CIDR{"10.2.0.0/16"},
+				External: []networkingv1beta1.CIDR{"10.3.0.0/16"},
+			},
+		}
+		cfg.Spec.TunneledCIDRs = []networkingv1beta1.CIDR{"8.8.8.8/32"}
+		cfg.Status.Remote = &networkingv1beta1.ClusterConfig{
+			CIDR: networkingv1beta1.ClusterConfigCIDR{
+				Pod:      []networkingv1beta1.CIDR{"10.2.0.0/16"},
+				External: []networkingv1beta1.CIDR{"10.3.0.0/16"},
+			},
+		}
+
+		r := &ConfigurationReconciler{}
+		r.setConfigurationConditions(cfg)
+
+		Expect(meta.IsStatusConditionTrue(cfg.Status.Conditions,
+			networkingv1beta1.ConfigurationConditionNetworkCIDRsConfigured)).To(BeTrue())
+		Expect(meta.IsStatusConditionTrue(cfg.Status.Conditions,
+			networkingv1beta1.ConfigurationConditionTunneledCIDRsConfigured)).To(BeFalse())
+
+		// Once the tunneled CIDR is reserved, the dedicated condition becomes true.
+		cfg.Status.TunneledCIDRs = []networkingv1beta1.CIDR{"8.8.8.8/32"}
+		r.setConfigurationConditions(cfg)
+		Expect(meta.IsStatusConditionTrue(cfg.Status.Conditions,
+			networkingv1beta1.ConfigurationConditionTunneledCIDRsConfigured)).To(BeTrue())
 	})
 })
 

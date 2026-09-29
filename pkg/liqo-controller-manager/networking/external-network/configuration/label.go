@@ -34,10 +34,12 @@ const (
 	LabelCIDRTypePod LabelCIDRTypeValue = "pod"
 	// LabelCIDRTypeExternal is used to target a ipamv1alpha1.Network resource that manages an ExternalCIDR.
 	LabelCIDRTypeExternal LabelCIDRTypeValue = "external"
+	// LabelCIDRTypeTunneled is used to target a ipamv1alpha1.Network resource that manages a tunneled CIDR.
+	LabelCIDRTypeTunneled LabelCIDRTypeValue = "tunneled"
 )
 
 // LabelCIDRTypeValues is the list of all the possible values of the LabelCIDRType label.
-var LabelCIDRTypeValues = []LabelCIDRTypeValue{LabelCIDRTypePod, LabelCIDRTypeExternal}
+var LabelCIDRTypeValues = []LabelCIDRTypeValue{LabelCIDRTypePod, LabelCIDRTypeExternal, LabelCIDRTypeTunneled}
 
 // ForgeNetworkLabel creates a label to target a ipamv1alpha1.Network resource.
 // The label is composed by the remote cluster ID and the CIDR type.
