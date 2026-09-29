@@ -35,6 +35,8 @@ func InstallFlags(flags *pflag.FlagSet, o *Opts) {
 	flags.StringVar(&o.TenantNamespace, "tenant-namespace", o.TenantNamespace, "The tenant namespace associated with the remote cluster")
 	flags.StringVar(&o.LiqoNamespace, "liqo-namespace", o.LiqoNamespace, "The namespace where Liqo is installed")
 	flags.DurationVar(&o.InformerResyncPeriod, "resync-period", o.InformerResyncPeriod, "The resync period for the informers")
+	flags.DurationVar(&o.FallbackGracePeriod, "fallback-grace-period", o.FallbackGracePeriod,
+		"The delay before the objects of a stopped namespace are re-enqueued for fallback reflection, 0 to disable")
 
 	flags.Var(&o.HomeCluster, "home-cluster-id", "The ID of the home cluster")
 	flags.Var(&o.ForeignCluster, "foreign-cluster-id", "The ID of the foreign cluster")
