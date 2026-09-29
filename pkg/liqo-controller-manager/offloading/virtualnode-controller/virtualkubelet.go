@@ -235,7 +235,7 @@ func (r *VirtualNodeReconciler) ensureVirtualKubeletDeploymentAbsence(
 		klog.Info(msg)
 		r.EventsRecorder.Event(virtualNode, "Normal", "VkDeleted", msg)
 
-		if err := client.IgnoreNotFound(r.Client.Delete(ctx, virtualKubeletDeployment)); err != nil {
+		if err := client.IgnoreNotFound(r.Delete(ctx, virtualKubeletDeployment)); err != nil {
 			return fmt.Errorf("deleting virtual-kubelet Deployment: %w", err)
 		}
 	}
