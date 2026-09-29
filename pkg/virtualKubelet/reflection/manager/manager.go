@@ -54,6 +54,10 @@ type manager struct {
 
 	namespaceHandler NamespaceHandler
 
+	// fallbackGracePeriod is the delay before the items of a stopped namespace are re-enqueued for
+	// fallback processing. A zero value disables the delay (immediate re-enqueue).
+	fallbackGracePeriod time.Duration
+
 	started bool
 	stop    map[string]context.CancelFunc
 
@@ -106,8 +110,21 @@ func (m *manager) WithNamespaceHandler(handler NamespaceHandler) Manager {
 	return m
 }
 
-// Start starts the reflection manager. It panics if executed twice.
-func (m *manager) Start(ctx context.Context) {
+// WithFallbackGracePeriod configures the grace period before the items of a stopped namespace are
+// re-enqueued for fallback processing. A zero value disables the delay (immediate re-enqueue).
+func (m *manager) WithFallbackGracePeriod(period time.Duration) Manager {
+	if m.started {
+		panic("Attempted to configure the fallback grace period while already running")
+	}
+
+	m.fallbackGracePeriod = period
+	return m
+}
+
+// Start starts the reflection manager. It returns an error if the namespace handler fails to
+// initialize, as continuing with partially started namespaces would leave the reflection in an
+// undefined state. It panics if executed twice.
+func (m *manager) Start(ctx context.Context) error {
 	if m.started {
 		panic("Attempted to start the reflection manager while already running")
 	}
@@ -118,7 +135,11 @@ func (m *manager) Start(ctx context.Context) {
 		opts := options.New(m.local, m.localPodInformerFactory.Core().V1().Pods()).
 			WithReadinessFunc(func() bool { return ready }).
 			WithEventBroadcaster(m.eventBroadcaster).
-			WithForgingOpts(&m.forgingOpts)
+			WithForgingOpts(&m.forgingOpts).
+			WithFallbackGracePeriod(m.fallbackGracePeriod)
+		if mapper, ok := m.namespaceHandler.(NamespaceMapper); ok {
+			opts.WithNamespaceMappedFunc(mapper.IsNamespaceMapped)
+		}
 		reflector.Start(ctx, opts)
 	}
 
@@ -129,7 +150,11 @@ func (m *manager) Start(ctx context.Context) {
 	m.started = true
 
 	if m.namespaceHandler != nil {
-		m.namespaceHandler.Start(ctx, m)
+		// Fail fast if the namespace handler fails to initialize, as continuing with partially started
+		// namespaces would leave the reflection in an undefined state.
+		if err := m.namespaceHandler.Start(ctx, m); err != nil {
+			return fmt.Errorf("failed to start the namespace handler: %w", err)
+		}
 	} else {
 		klog.Warningf("Starting reflection manager without namespace handler")
 	}
@@ -144,6 +169,8 @@ func (m *manager) Start(ctx context.Context) {
 			stop()
 		}
 	}()
+
+	return nil
 }
 
 // StartNamespace starts the reflection for a given namespace.

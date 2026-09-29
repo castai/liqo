@@ -65,6 +65,9 @@ type InitConfig struct {
 	DisableIPReflection  bool
 	LocalPodCIDRs        []string
 	InformerResyncPeriod time.Duration
+	// FallbackGracePeriod is the delay before the items of a stopped namespace are re-enqueued for
+	// fallback processing. An explicit zero disables the delay (immediate re-enqueue).
+	FallbackGracePeriod time.Duration
 
 	ReflectorsConfigs map[resources.ResourceReflected]offloadingv1beta1.ReflectorConfig
 
@@ -167,7 +170,8 @@ func NewLiqoProvider(ctx context.Context, cfg *InitConfig, eb record.EventBroadc
 			cfg.EnableStorage, ptr.To(cfg.ReflectorsConfigs[resources.PersistentVolumeClaim]))).
 		With(storage.NewLocalStoragePVCReflector(ptr.To(cfg.ReflectorsConfigs[resources.LocalStoragePVC]))).
 		With(event.NewEventReflector(ptr.To(cfg.ReflectorsConfigs[resources.Event]))).
-		WithNamespaceHandler(namespacemap.NewHandler(localLiqoClient, cfg.Namespace, cfg.InformerResyncPeriod))
+		WithNamespaceHandler(namespacemap.NewHandler(localLiqoClient, cfg.Namespace, cfg.InformerResyncPeriod)).
+		WithFallbackGracePeriod(cfg.FallbackGracePeriod)
 
 	if !cfg.DisableIPReflection {
 		reflectionManager.With(exposition.NewEndpointSliceReflector(cfg.LocalPodCIDRs, ptr.To(cfg.ReflectorsConfigs[resources.EndpointSlice])))
@@ -187,7 +191,9 @@ func NewLiqoProvider(ctx context.Context, cfg *InitConfig, eb record.EventBroadc
 		klog.Info("DRA support is not enabled: resource.k8s.io/v1 is not available on local and/or remote cluster")
 	}
 
-	reflectionManager.Start(ctx)
+	if err := reflectionManager.Start(ctx); err != nil {
+		return nil, errors.Wrap(err, "failed to start the reflection manager")
+	}
 
 	return &LiqoProvider{
 		reflectionManager: reflectionManager,
