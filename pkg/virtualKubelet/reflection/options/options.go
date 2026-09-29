@@ -15,6 +15,8 @@
 package options
 
 import (
+	"time"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/watch"
@@ -51,6 +53,10 @@ type ReflectorOpts struct {
 	// in accepted phase. An error indicates that the mapping state is uncertain. It may be nil if the
 	// information is not available.
 	NamespaceMapped func(namespace string) (bool, error)
+
+	// FallbackGracePeriod is the delay before the items of a stopped namespace are re-enqueued for
+	// fallback processing. A zero value disables the delay (immediate re-enqueue).
+	FallbackGracePeriod time.Duration
 }
 
 // New returns a new ReflectorOpts object.
@@ -85,6 +91,13 @@ func (ro *ReflectorOpts) WithForgingOpts(opts *forge.ForgingOpts) *ReflectorOpts
 // WithNamespaceMappedFunc configures the function reporting whether a namespace is currently mapped.
 func (ro *ReflectorOpts) WithNamespaceMappedFunc(mapped func(namespace string) (bool, error)) *ReflectorOpts {
 	ro.NamespaceMapped = mapped
+	return ro
+}
+
+// WithFallbackGracePeriod configures the delay before the items of a stopped namespace are re-enqueued
+// for fallback processing. A zero value disables the delay (immediate re-enqueue).
+func (ro *ReflectorOpts) WithFallbackGracePeriod(period time.Duration) *ReflectorOpts {
+	ro.FallbackGracePeriod = period
 	return ro
 }
 

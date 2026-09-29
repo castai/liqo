@@ -67,6 +67,11 @@ type reflector struct {
 
 	concurrencyMode ConcurrencyMode
 	reflectionType  offloadingv1beta1.ReflectionType
+
+	// fallbackGracePeriod is the delay before the items of a stopped namespace are re-enqueued for
+	// fallback processing. It is populated from the reflector options at Start time; a zero value
+	// disables the delay (immediate re-enqueue).
+	fallbackGracePeriod time.Duration
 }
 
 // String returns the name of the reflector.
@@ -83,13 +88,6 @@ const (
 	// ConcurrencyModeAll is the concurrency mode that allows to run the reflector on all the nodes.
 	ConcurrencyModeAll ConcurrencyMode = "all"
 )
-
-// fallbackGracePeriod is the delay before the items of a stopped namespace are re-enqueued for
-// fallback processing. The routing between the namespaced and the fallback reflector is performed
-// when the items are dequeued: in case the namespace reflection is quickly restarted (e.g., due to
-// a transient flapping of the NamespaceMap), the grace period lets the items be routed back to the
-// namespaced reflector, instead of being erroneously handled (e.g., rejected) by the fallback one.
-var fallbackGracePeriod = 15 * time.Second
 
 // NewReflector returns a new reflector to implement the reflection towards a remote clusters, of a dummy one if no workers are specified.
 func NewReflector(name string, namespaced NamespacedReflectorFactoryFunc, fallback FallbackReflectorFactoryFunc,
@@ -124,6 +122,7 @@ func newReflector(name string, namespaced NamespacedReflectorFactoryFunc, fallba
 // Start starts the reflector.
 func (gr *reflector) Start(ctx context.Context, opts *options.ReflectorOpts) {
 	klog.Infof("Starting the %v reflector with %v workers (policy: %v)", gr.name, gr.workers, gr.reflectionType)
+	gr.fallbackGracePeriod = opts.FallbackGracePeriod
 	gr.fallback = gr.fallbackFactory(opts.WithHandlerFactory(gr.handlers))
 
 	for i := uint(0); i < gr.workers; i++ {
@@ -183,7 +182,7 @@ func (gr *reflector) StopNamespace(local, remote string) {
 	// after a grace period to account for transient flapping of the namespace reflection.
 	if gr.fallback != nil {
 		for _, key := range gr.fallback.Keys(local, remote) {
-			gr.workqueue.AddAfter(key, fallbackGracePeriod)
+			gr.workqueue.AddAfter(key, gr.fallbackGracePeriod)
 		}
 	}
 

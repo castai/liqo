@@ -105,7 +105,7 @@ var _ = Describe("Reflector tests", func() {
 
 			Context("the reflector is started", func() {
 				var (
-					opts   options.ReflectorOpts
+					ropts  options.ReflectorOpts
 					ctx    context.Context
 					cancel context.CancelFunc
 				)
@@ -113,14 +113,18 @@ var _ = Describe("Reflector tests", func() {
 				BeforeEach(func() {
 					ctx, cancel = context.WithCancel(context.Background())
 					workers = 0 /* do not start any child go routine */
-					opts = options.ReflectorOpts{LocalClient: fake.NewSimpleClientset()}
+					ropts = options.ReflectorOpts{LocalClient: fake.NewSimpleClientset()}
 				})
-				JustBeforeEach(func() { rfl.Start(ctx, &opts) })
+				JustBeforeEach(func() { rfl.Start(ctx, &ropts) })
 				AfterEach(func() { cancel() })
+
+				It("should disable the fallback grace period when not configured", func() {
+					Expect(rfl.(*reflector).fallbackGracePeriod).To(BeZero())
+				})
 
 				It("should create a new fallback reflector", func() { Expect(rfl.(*reflector).fallback).To(Equal(fbrfl)) })
 				It("should correctly propagate the reflector options", func() {
-					Expect(fbrfl.Opts.LocalClient).To(Equal(opts.LocalClient))
+					Expect(fbrfl.Opts.LocalClient).To(Equal(ropts.LocalClient))
 					Expect(fbrfl.Opts.HandlerFactory).ToNot(BeNil())
 				})
 
@@ -162,14 +166,7 @@ var _ = Describe("Reflector tests", func() {
 						})
 
 						When("the fallback handler is set", func() {
-							var previousGracePeriod time.Duration
-
-							BeforeEach(func() {
-								previousGracePeriod = fallbackGracePeriod
-								fallbackGracePeriod = 50 * time.Millisecond
-							})
-
-							AfterEach(func() { fallbackGracePeriod = previousGracePeriod })
+							BeforeEach(func() { ropts.WithFallbackGracePeriod(50 * time.Millisecond) })
 
 							It("should enqueue the returned elements after the grace period", func() {
 								// The item enqueued by StopNamespace is delayed, hence the Get blocks until the

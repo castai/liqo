@@ -16,6 +16,7 @@ package manager
 
 import (
 	"context"
+	"time"
 
 	"k8s.io/apimachinery/pkg/types"
 
@@ -28,8 +29,12 @@ type Manager interface {
 	With(reflector Reflector) Manager
 	// WithNamespaceHandler add the given NamespaceHandler to the manager.
 	WithNamespaceHandler(handler NamespaceHandler) Manager
-	// Start starts the reflection manager. It panics if executed twice.
-	Start(ctx context.Context)
+	// WithFallbackGracePeriod configures the grace period before the items of a stopped namespace are
+	// re-enqueued for fallback processing. A zero value disables the delay (immediate re-enqueue).
+	WithFallbackGracePeriod(period time.Duration) Manager
+	// Start starts the reflection manager. It returns an error if the namespace handler fails to
+	// initialize, to avoid running with an undefined reflection state. It panics if executed twice.
+	Start(ctx context.Context) error
 	// Resync triggers a resync of the reflectors.
 	Resync() error
 

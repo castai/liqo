@@ -115,8 +115,8 @@ var _ = Describe("Manager tests", func() {
 					handler.err = errors.New("timed out waiting for the namespaceMap handler registration to sync")
 				})
 
-				It("should panic, to avoid running with an undefined reflection state", func() {
-					Expect(func() { mgr.Start(ctx) }).To(Panic())
+				It("should return an error, to avoid running with an undefined reflection state", func() {
+					Expect(mgr.Start(ctx)).To(MatchError(ContainSubstring("failed to start the namespace handler")))
 				})
 			})
 		})
@@ -138,7 +138,12 @@ var _ = Describe("Manager tests", func() {
 			Context("the manager is started", func() {
 				JustBeforeEach(func() {
 					mgr.WithNamespaceHandler(&fakeNamespaceHandler{})
+					mgr.WithFallbackGracePeriod(3 * time.Second)
 					mgr.Start(ctx)
+				})
+
+				It("should propagate the fallback grace period to the reflector options", func() {
+					Expect(reflector.Opts.FallbackGracePeriod).To(Equal(3 * time.Second))
 				})
 
 				It("should set the manager as started", func() { Expect(mgr.(*manager).started).To(BeTrue()) })
