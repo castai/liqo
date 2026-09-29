@@ -48,6 +48,7 @@ import (
 	networkctrl "github.com/liqotech/liqo/pkg/liqo-controller-manager/networking/network-controller"
 	dynamicutils "github.com/liqotech/liqo/pkg/utils/dynamic"
 	ipamutils "github.com/liqotech/liqo/pkg/utils/ipam"
+	"github.com/liqotech/liqo/pkg/utils/network"
 )
 
 // NetworkingOption defines the options to setup the Networking module.
@@ -210,9 +211,16 @@ func SetupNetworkingModule(ctx context.Context, mgr manager.Manager, uncachedCli
 		return err
 	}
 
+	defaultInterfaceName, err := network.GetDefaultInterfaceName()
+	if err != nil {
+		klog.Errorf("Unable to get the default interface name: %v", err)
+		return err
+	}
+
 	configurationReconciler := internalconfigurationcontroller.NewConfigurationReconciler(mgr.GetClient(), mgr.GetScheme(),
 		&internalconfigurationcontroller.Options{
 			FullMasqueradeEnabled: opts.FabricFullMasquerade,
+			DefaultInterfaceName:  defaultInterfaceName,
 		})
 	if err := configurationReconciler.SetupWithManager(mgr); err != nil {
 		klog.Errorf("Unable to start the configurationReconciler: %v", err)
