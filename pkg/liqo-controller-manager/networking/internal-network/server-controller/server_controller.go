@@ -17,7 +17,6 @@ package servercontroller
 import (
 	"context"
 	"fmt"
-	"slices"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -137,10 +136,7 @@ func (r *ServerReconciler) ensureInternalFabric(ctx context.Context, gwServer *n
 		}
 		internalFabric.Spec.Interface.Gateway.IP = networkingv1beta1.IP(ip.String())
 
-		internalFabric.Spec.RemoteCIDRs = slices.Concat(
-			configuration.Status.Remote.CIDR.Pod,
-			configuration.Status.Remote.CIDR.External,
-		)
+		internalFabric.Spec.RemoteCIDRs = netutils.ConfigurationRemoteCIDRs(configuration)
 
 		return controllerutil.SetControllerReference(gwServer, internalFabric, r.Scheme)
 	}); err != nil {
