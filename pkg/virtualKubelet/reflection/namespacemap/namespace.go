@@ -170,11 +170,10 @@ func (nh *Handler) checkNamespaceMapUniqueness(_ interface{}) bool {
 // peering down, it first drains the pods and deletes the virtual kubelet deployment, and only afterwards
 // deletes the NamespaceMap (hence no pod is left for the fallback reflector to act upon).
 func (nh *Handler) IsNamespaceMapped(namespace string) (bool, error) {
-	nsMapFilter := labels.SelectorFromSet(labels.Set{
+	namespaceMaps, err := nh.lister.List(labels.SelectorFromSet(labels.Set{
 		liqoconst.RemoteClusterID:             string(forge.RemoteCluster),
 		liqoconst.ReplicationDestinationLabel: string(forge.RemoteCluster),
-	})
-	namespaceMaps, err := nh.lister.List(nsMapFilter)
+	}))
 	if err != nil {
 		return false, fmt.Errorf("failed to list NamespaceMaps: %w", err)
 	}

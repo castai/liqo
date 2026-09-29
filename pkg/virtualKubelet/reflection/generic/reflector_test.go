@@ -113,7 +113,7 @@ var _ = Describe("Reflector tests", func() {
 				BeforeEach(func() {
 					ctx, cancel = context.WithCancel(context.Background())
 					workers = 0 /* do not start any child go routine */
-					ropts = options.ReflectorOpts{LocalClient: fake.NewSimpleClientset()}
+					ropts = options.ReflectorOpts{LocalClient: fake.NewSimpleClientset()} //nolint:staticcheck // deprecated, adequate for tests
 				})
 				JustBeforeEach(func() { rfl.Start(ctx, &ropts) })
 				AfterEach(func() { cancel() })
