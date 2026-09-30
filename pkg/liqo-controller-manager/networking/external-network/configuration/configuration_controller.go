@@ -254,7 +254,7 @@ func (r *ConfigurationReconciler) setConfigurationConditions(cfg *networkingv1be
 	}
 	// Report the tunneled CIDRs that have been reserved (i.e. configured) so far.
 	if reserved := cidrutils.Strings(cfg.Status.TunneledCIDRs); len(reserved) > 0 {
-		tunneledMessage = fmt.Sprintf("%s: %s", tunneledMessage, strings.Join(reserved, ", "))
+		tunneledMessage = fmt.Sprintf("%s. Currently reserved: %s", tunneledMessage, strings.Join(reserved, ", "))
 	}
 
 	meta.SetStatusCondition(&cfg.Status.Conditions, metav1.Condition{
