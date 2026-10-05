@@ -259,6 +259,10 @@ func (r *ServerReconciler) EnsureGatewayServer(ctx context.Context, gwServer *ne
 		mergeServiceMetadataField(spec, "annotations", gwServer.Spec.ServiceAnnotations)
 		mergeServiceMetadataField(spec, "labels", gwServer.Spec.ServiceLabels)
 
+		// Enforce the external traffic policy of the service created by the gateway server,
+		// overriding the value defined in the server template.
+		setServiceExternalTrafficPolicy(spec, gwServer.Spec.ServiceExternalTrafficPolicy)
+
 		objChild.Object["spec"] = spec
 		return nil
 	})
@@ -341,6 +345,29 @@ func forgeGWKMapFunc(cl client.Client) handler.MapFunc {
 
 		return requests
 	}
+}
+
+// setServiceExternalTrafficPolicy sets spec.service.spec.externalTrafficPolicy to the given value.
+// The provided value takes precedence over the one defined in the server template.
+func setServiceExternalTrafficPolicy(spec interface{}, policy *corev1.ServiceExternalTrafficPolicy) {
+	if policy == nil {
+		return
+	}
+	specMap, ok := spec.(map[string]interface{})
+	if !ok {
+		return
+	}
+	svc, _ := specMap["service"].(map[string]interface{})
+	if svc == nil {
+		svc = map[string]interface{}{}
+		specMap["service"] = svc
+	}
+	svcSpec, _ := svc["spec"].(map[string]interface{})
+	if svcSpec == nil {
+		svcSpec = map[string]interface{}{}
+		svc["spec"] = svcSpec
+	}
+	svcSpec["externalTrafficPolicy"] = string(*policy)
 }
 
 // mergeServiceMetadataField merges the given key-value pairs into spec.service.metadata.<field>.

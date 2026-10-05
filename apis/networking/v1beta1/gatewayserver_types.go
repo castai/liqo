@@ -87,6 +87,12 @@ type GatewayServerSpec struct {
 	// These labels take precedence over any labels defined in the server template.
 	// +optional
 	ServiceLabels map[string]string `json:"serviceLabels,omitempty"`
+	// ServiceExternalTrafficPolicy specifies the external traffic policy of the service created by the gateway server
+	// (e.g., set it to Local to preserve the client source IP when exposing the gateway through NodePort or LoadBalancer).
+	// It takes precedence over any value defined in the server template.
+	// +optional
+	// +kubebuilder:validation:Enum=Local;Cluster
+	ServiceExternalTrafficPolicy *corev1.ServiceExternalTrafficPolicy `json:"serviceExternalTrafficPolicy,omitempty"`
 }
 
 // EndpointStatus defines the observed state of the endpoint.
