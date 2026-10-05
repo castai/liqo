@@ -202,6 +202,15 @@ spec:
                   ServiceAnnotations specifies custom annotations to be added to the service created by the gateway server.
                   These annotations take precedence over any annotations defined in the server template.
                 type: object
+              serviceExternalTrafficPolicy:
+                description: |-
+                  ServiceExternalTrafficPolicy specifies the external traffic policy of the service created by the gateway server
+                  (e.g., set it to Local to preserve the client source IP when exposing the gateway through NodePort or LoadBalancer).
+                  It takes precedence over any value defined in the server template.
+                enum:
+                - Local
+                - Cluster
+                type: string
               serviceLabels:
                 additionalProperties:
                   type: string
