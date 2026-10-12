@@ -28,6 +28,7 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
 	"k8s.io/utils/trace"
+	ctrlcache "sigs.k8s.io/controller-runtime/pkg/cache"
 
 	liqoclient "github.com/liqotech/liqo/pkg/client/clientset/versioned"
 	liqoinformers "github.com/liqotech/liqo/pkg/client/informers/externalversions"
@@ -82,7 +83,7 @@ func New(local, remote kubernetes.Interface, localLiqo, remoteLiqo liqoclient.In
 
 		reflectors: make([]Reflector, 0),
 		localPodInformerFactory: informers.NewSharedInformerFactoryWithOptions(local, resync,
-			informers.WithTweakListOptions(localPodTweakListOptions)),
+			informers.WithTweakListOptions(localPodTweakListOptions), informers.WithTransform(StripManagedFields)),
 
 		started: false,
 		stop:    make(map[string]context.CancelFunc),
@@ -193,13 +194,17 @@ func (m *manager) StartNamespace(local, remote string) {
 	m.stop[local] = cancel
 
 	// The local informer factories, which select all resources in the given namespace.
-	localFactory := informers.NewSharedInformerFactoryWithOptions(m.local, m.resync, informers.WithNamespace(local))
-	localLiqoFactory := liqoinformers.NewSharedInformerFactoryWithOptions(m.localLiqo, m.resync, liqoinformers.WithNamespace(local))
+	localFactory := informers.NewSharedInformerFactoryWithOptions(m.local, m.resync,
+		informers.WithNamespace(local), informers.WithTransform(StripManagedFields))
+	localLiqoFactory := liqoinformers.NewSharedInformerFactoryWithOptions(m.localLiqo, m.resync,
+		liqoinformers.WithNamespace(local), liqoinformers.WithTransform(StripManagedFields))
 
 	// The remote informer factories, which select all resources in the given namespace.
 	// We do not filter the resources by label selector, to be able to abort reflection in case the remote object already exists.
-	remoteFactory := informers.NewSharedInformerFactoryWithOptions(m.remote, m.resync, informers.WithNamespace(remote))
-	remoteLiqoFactory := liqoinformers.NewSharedInformerFactoryWithOptions(m.remoteLiqo, m.resync, liqoinformers.WithNamespace(remote))
+	remoteFactory := informers.NewSharedInformerFactoryWithOptions(m.remote, m.resync,
+		informers.WithNamespace(remote), informers.WithTransform(StripManagedFields))
+	remoteLiqoFactory := liqoinformers.NewSharedInformerFactoryWithOptions(m.remoteLiqo, m.resync,
+		liqoinformers.WithNamespace(remote), liqoinformers.WithTransform(StripManagedFields))
 
 	ready := false
 	for _, reflector := range m.reflectors {
@@ -271,3 +276,9 @@ func (m *manager) Resync() error {
 	}
 	return nil
 }
+
+// StripManagedFields is the transform to be set on the virtual kubelet informers, dropping the managed fields from
+// the cached objects: they are never read, while accounting for a significant share of the informers memory.
+// Objects retrieved from the cache and later sent in an update keep their managed fields server-side, as a nil
+// value is ignored.
+var StripManagedFields = ctrlcache.TransformStripManagedFields()
