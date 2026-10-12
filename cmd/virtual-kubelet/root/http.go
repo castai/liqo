@@ -15,6 +15,8 @@
 package root
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/ed25519"
 	cryptorand "crypto/rand"
@@ -23,6 +25,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"math/big"
 	"math/rand"
 	"net"
@@ -30,6 +33,9 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"strconv"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/virtual-kubelet/virtual-kubelet/node/api"
@@ -202,10 +208,82 @@ const (
 	metricsProxyErrorCacheTTL = 5 * time.Second
 )
 
-// scrapeResponse is the cached outcome of a proxied scrape: the response body and the status code.
+// scrapeResponse is the cached outcome of a proxied scrape: the gzip-compressed response body.
+// The body is stored compressed, as metrics payloads (e.g., cadvisor ones) can be several MBs large
+// while compressing by roughly an order of magnitude.
 type scrapeResponse struct {
-	data       []byte
-	statusCode int
+	gzipped []byte
+}
+
+// gzipWriters pools the gzip writers used to compress the scraped bodies, as each one allocates
+// a large internal state.
+var gzipWriters = sync.Pool{New: func() any { return gzip.NewWriter(io.Discard) }}
+
+// scrapeRemote retrieves the given URI and returns its body compressed. The body is compressed while
+// streamed, so that it is never entirely materialized uncompressed in memory.
+func scrapeRemote(ctx context.Context, cl rest.Interface, uri string) (scrapeResponse, error) {
+	body, err := cl.Get().RequestURI(uri).Stream(ctx)
+	if err != nil {
+		return scrapeResponse{}, err
+	}
+	defer body.Close()
+
+	var buf bytes.Buffer
+	gz := gzipWriters.Get().(*gzip.Writer)
+	defer gzipWriters.Put(gz)
+	gz.Reset(&buf)
+
+	if _, err := io.Copy(gz, body); err != nil {
+		return scrapeResponse{}, err
+	}
+	if err := gz.Close(); err != nil {
+		return scrapeResponse{}, err
+	}
+	// Clone the body, to avoid retaining the spare capacity of the buffer for the whole cache lifetime.
+	return scrapeResponse{gzipped: bytes.Clone(buf.Bytes())}, nil
+}
+
+// writeScrapeResponse writes the cached scrape response, as-is if the client accepts gzip-encoded
+// bodies (e.g., Prometheus), and decompressing it on the fly otherwise.
+func writeScrapeResponse(w http.ResponseWriter, r *http.Request, resp scrapeResponse) error {
+	// The content type is set explicitly, as it would be otherwise sniffed from the (compressed) body.
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Add("Vary", "Accept-Encoding")
+
+	if acceptsGzip(r) {
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Set("Content-Length", fmt.Sprint(len(resp.gzipped)))
+		w.WriteHeader(http.StatusOK)
+		_, err := w.Write(resp.gzipped)
+		return err
+	}
+
+	gz, err := gzip.NewReader(bytes.NewReader(resp.gzipped))
+	if err != nil {
+		return err
+	}
+	w.WriteHeader(http.StatusOK)
+	_, err = io.Copy(w, gz)
+	return err
+}
+
+// acceptsGzip returns whether the client accepts gzip-encoded response bodies.
+func acceptsGzip(r *http.Request) bool {
+	for _, value := range r.Header.Values("Accept-Encoding") {
+		for _, encoding := range strings.Split(value, ",") {
+			encoding, params, _ := strings.Cut(encoding, ";")
+			if !strings.EqualFold(strings.TrimSpace(encoding), "gzip") {
+				continue
+			}
+			// Honor an explicit refusal (i.e., "gzip;q=0").
+			if qvalue, found := strings.CutPrefix(strings.TrimSpace(params), "q="); found {
+				q, err := strconv.ParseFloat(qvalue, 64)
+				return err == nil && q > 0
+			}
+			return true
+		}
+	}
+	return false
 }
 
 func attachMetricsRoutes(ctx context.Context, mux *http.ServeMux, cl rest.Interface,
@@ -246,20 +324,7 @@ func attachMetricsRoutes(ctx context.Context, mux *http.ServeMux, cl rest.Interf
 		// this way: using r.Context() would let the first caller's cancellation poison the shared
 		// result for every waiter.
 		resp, err := scrapeCache.Do(ctx, uri, func(ctx context.Context) (scrapeResponse, error) {
-			res := cl.Get().RequestURI(uri).Do(ctx)
-			if err := res.Error(); err != nil {
-				return scrapeResponse{}, err
-			}
-
-			var statusCode int
-			res.StatusCode(&statusCode)
-
-			data, err := res.Raw()
-			if err != nil {
-				return scrapeResponse{}, err
-			}
-
-			return scrapeResponse{data: data, statusCode: statusCode}, nil
+			return scrapeRemote(ctx, cl, uri)
 		})
 		if err != nil {
 			klog.Error(err)
@@ -267,8 +332,7 @@ func attachMetricsRoutes(ctx context.Context, mux *http.ServeMux, cl rest.Interf
 			return
 		}
 
-		w.WriteHeader(resp.statusCode)
-		if _, err = w.Write(resp.data); err != nil {
+		if err := writeScrapeResponse(w, r, resp); err != nil {
 			klog.Error(err)
 		}
 	}
