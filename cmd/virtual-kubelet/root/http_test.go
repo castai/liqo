@@ -15,6 +15,7 @@
 package root
 
 import (
+	"compress/gzip"
 	"context"
 	"errors"
 	"io"
@@ -39,12 +40,14 @@ var _ = Describe("Metrics proxy routes", func() {
 		mux        *http.ServeMux
 		calls      atomic.Int64
 		failScrape atomic.Bool
+		statusCode atomic.Int64
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
 		calls.Store(0)
 		failScrape.Store(false)
+		statusCode.Store(http.StatusOK)
 
 		cl := &fake.RESTClient{
 			NegotiatedSerializer: clientscheme.Codecs.WithoutConversion(),
@@ -55,7 +58,7 @@ var _ = Describe("Metrics proxy routes", func() {
 					return nil, errors.New("scrape failure")
 				}
 				return &http.Response{
-					StatusCode: http.StatusOK,
+					StatusCode: int(statusCode.Load()),
 					Header:     http.Header{"Content-Type": []string{"text/plain"}},
 					Body:       io.NopCloser(strings.NewReader("metrics-payload")),
 				}, nil
@@ -66,16 +69,57 @@ var _ = Describe("Metrics proxy routes", func() {
 		attachMetricsRoutes(ctx, mux, cl, clusterID, "", 15*time.Second)
 	})
 
-	doRequest := func(path string) *httptest.ResponseRecorder {
+	doRequestWithEncoding := func(path, acceptEncoding string) *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()
-		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, http.NoBody))
+		req := httptest.NewRequest(http.MethodGet, path, http.NoBody)
+		if acceptEncoding != "" {
+			req.Header.Set("Accept-Encoding", acceptEncoding)
+		}
+		mux.ServeHTTP(rec, req)
 		return rec
+	}
+
+	doRequest := func(path string) *httptest.ResponseRecorder {
+		return doRequestWithEncoding(path, "")
 	}
 
 	It("should proxy the remote metrics", func() {
 		rec := doRequest("/metrics/resource")
 		Expect(rec.Code).To(Equal(http.StatusOK))
+		Expect(rec.Header().Get("Content-Encoding")).To(BeEmpty())
+		Expect(rec.Header().Get("Content-Type")).To(Equal("text/plain; charset=utf-8"))
 		Expect(rec.Body.String()).To(Equal("metrics-payload"))
+	})
+
+	It("should serve gzip-encoded metrics to clients accepting them", func() {
+		rec := doRequestWithEncoding("/metrics/resource", "deflate, gzip")
+		Expect(rec.Code).To(Equal(http.StatusOK))
+		Expect(rec.Header().Get("Content-Encoding")).To(Equal("gzip"))
+		Expect(rec.Header().Get("Content-Type")).To(Equal("text/plain; charset=utf-8"))
+
+		gz, err := gzip.NewReader(rec.Body)
+		Expect(err).ToNot(HaveOccurred())
+		body, err := io.ReadAll(gz)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(string(body)).To(Equal("metrics-payload"))
+	})
+
+	It("should serve plain metrics to clients explicitly refusing gzip", func() {
+		rec := doRequestWithEncoding("/metrics/resource", "gzip;q=0")
+		Expect(rec.Code).To(Equal(http.StatusOK))
+		Expect(rec.Header().Get("Content-Encoding")).To(BeEmpty())
+		Expect(rec.Body.String()).To(Equal("metrics-payload"))
+	})
+
+	It("should serve both encodings from the same cache entry", func() {
+		doRequestWithEncoding("/metrics/resource", "gzip")
+		Expect(doRequest("/metrics/resource").Body.String()).To(Equal("metrics-payload"))
+		Expect(calls.Load()).To(BeNumerically("==", 1))
+	})
+
+	It("should fail if the remote scrape returns a non-successful status code", func() {
+		statusCode.Store(http.StatusServiceUnavailable)
+		Expect(doRequest("/metrics/resource").Code).To(Equal(http.StatusInternalServerError))
 	})
 
 	It("should serve subsequent requests for the same path from the cache", func() {
