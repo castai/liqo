@@ -106,13 +106,16 @@ func (rsr *ResourceSliceReflector) Start(ctx context.Context, opts *options.Refl
 		rsr.forgingOpts = &forge.ForgingOpts{}
 	}
 
-	localFactory := informers.NewSharedInformerFactory(rsr.localClient, rsr.resync)
-	remoteFactory := informers.NewSharedInformerFactory(rsr.remoteClient, rsr.resync)
+	localFactory := informers.NewSharedInformerFactoryWithOptions(rsr.localClient, rsr.resync,
+		informers.WithTransform(manager.StripManagedFields))
+	remoteFactory := informers.NewSharedInformerFactoryWithOptions(rsr.remoteClient, rsr.resync,
+		informers.WithTransform(manager.StripManagedFields))
 	// Separate factory for nodes to just listen on the virtual nodes changes.
 	nodeFactory := informers.NewSharedInformerFactoryWithOptions(rsr.localClient, rsr.resync,
 		informers.WithTweakListOptions(func(opts *metav1.ListOptions) {
 			opts.LabelSelector = consts.TypeLabel + "=" + consts.TypeNode
 		}),
+		informers.WithTransform(manager.StripManagedFields),
 	)
 
 	localSliceInformer := localFactory.Resource().V1().ResourceSlices()
