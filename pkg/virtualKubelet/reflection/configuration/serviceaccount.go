@@ -208,14 +208,19 @@ func (nsar *NamespacedServiceAccountReflector) Handle(ctx context.Context, name 
 	tracer.Step("Remote mutation created")
 
 	defer tracer.Step("Enforced the correctness of the remote object")
-	if _, err := nsar.remoteSecretsClient.Apply(ctx, mutation, forge.ApplyOptions()); err != nil {
+	applied, err := nsar.remoteSecretsClient.Apply(ctx, mutation, forge.ApplyOptions())
+	if err != nil {
 		klog.Errorf("Failed to enforce remote SA tokens secret %q (local pod: %q): %v", nsar.RemoteRef(rname), nsar.LocalRef(name), err)
 		nsar.Event(local, corev1.EventTypeWarning, forge.EventFailedSATokensReflection, forge.EventFailedReflectionMsg(err))
 		return err
 	}
 
-	klog.Infof("Remote SA tokens secret %q successfully enforced (local pod: %q)", nsar.RemoteRef(rname), nsar.LocalRef(name))
-	nsar.Event(local, corev1.EventTypeNormal, forge.EventSuccessfulSATokensReflection, forge.EventSuccessfulReflectionMsg())
+	if generic.IsObjectChanged(remote, applied) {
+		klog.Infof("Remote SA tokens secret %q successfully enforced (local pod: %q)", nsar.RemoteRef(rname), nsar.LocalRef(name))
+		nsar.Event(local, corev1.EventTypeNormal, forge.EventSuccessfulSATokensReflection, forge.EventSuccessfulReflectionMsg())
+	} else {
+		klog.V(4).Infof("Remote SA tokens secret %q already in sync (local pod: %q)", nsar.RemoteRef(rname), nsar.LocalRef(name))
+	}
 
 	// Reenqueue the event, to ensure tokens is refreshed before expiration.
 	refreshAfter := utils.RandomJitter(time.Until(tokens.EarliestRefresh()), 30*time.Second)
