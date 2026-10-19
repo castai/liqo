@@ -287,7 +287,6 @@ func runRootCommand(ctx context.Context, c *Opts) error {
 
 	if c.CreateNode {
 		var nodeReady chan struct{}
-		var nodeRunner *node.NodeController
 
 		remoteCl, err := client.New(remoteConfig, client.Options{Scheme: scheme})
 		if err != nil {
@@ -326,25 +325,35 @@ func runRootCommand(ctx context.Context, c *Opts) error {
 		nodeProvider := nodeprovider.NewLiqoNodeProvider(&nodecfg)
 		nodeReady = nodeProvider.StartProvider(ctx)
 
-		nodeRunner, err = node.NewNodeController(
-			nodeProvider, nodeProvider.GetNode(),
-			localClient.CoreV1().Nodes(),
+		nodeControllerOpts := []node.NodeControllerOpt{
 			node.WithNodeEnableLeaseV1(localClient.CoordinationV1().Leases(corev1.NamespaceNodeLease), int32(c.NodeLeaseDuration.Seconds())),
 			node.WithNodePingInterval(c.NodePingInterval), node.WithNodePingTimeout(c.NodePingTimeout),
 			node.WithNodeStatusUpdateErrorHandler(nodeProvider.HandleNodeStatusUpdateError),
-		)
-		if err != nil {
-			return err
 		}
 
-		go func() {
-			if err := nodeRunner.Run(ctx); err != nil {
-				klog.Error(err, "error in pod controller running")
-				panic(err)
+		newRunner := func() (nodeRunner, error) {
+			n, err := node.NewNodeController(nodeProvider, nodeProvider.GetNode(), localClient.CoreV1().Nodes(), nodeControllerOpts...)
+			if err != nil {
+				return nil, err
 			}
-		}()
+			return n, nil
+		}
 
-		<-nodeRunner.Ready()
+		// If the node controller dies after startup it can no longer update the node status: exit to
+		// let Kubernetes restart the pod.
+		onNodeControllerTermination := func(err error) {
+			klog.Errorf("Node controller terminated unexpectedly: %v", err)
+			os.Exit(1)
+		}
+
+		// Start the node controller, waiting until it is ready and retrying a transient startup failure.
+		if err := startNodeControllerWithRetry(ctx, nodeStartupRetryDelay, newRunner, onNodeControllerTermination); err != nil {
+			if ctx.Err() != nil {
+				// The context was canceled while retrying: this is a regular shutdown, not a failure.
+				return nil
+			}
+			exitOnNodeControllerStartupFailure(err)
+		}
 
 		// The virtual kubelet runs no CSI driver, but a CSINode object is expected to exist for a registered node.
 		err = nodeProvider.EnsureCSINode(ctx)
@@ -360,6 +369,14 @@ func runRootCommand(ctx context.Context, c *Opts) error {
 	klog.Info("Setup ended")
 	<-ctx.Done()
 	return nil
+}
+
+// exitOnNodeControllerStartupFailure terminates the process when the node controller cannot be started, so that the
+// virtual kubelet pod is restarted by Kubernetes. It is kept out of runRootCommand as it would otherwise skip the
+// deferred cleanup when exiting.
+func exitOnNodeControllerStartupFailure(err error) {
+	klog.Errorf("Unable to start the node controller: %v", err)
+	os.Exit(1)
 }
 
 // getRemoteNode returns the remote node backing the virtual kubelet, or nil if it cannot be retrieved, in which case

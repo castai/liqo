@@ -42,7 +42,7 @@ const (
 	DefaultNodeName             = "virtual-kubelet"
 	DefaultInformerResyncPeriod = 10 * time.Hour
 	DefaultListenPort           = 10250
-	DefaultNodePingTimeout      = 1 * time.Second
+	DefaultNodePingTimeout      = 3 * time.Second
 	DefaultNodeCheckNetwork     = true
 
 	// DefaultMetricsProxyCacheTTL is the default time-to-live of the cached metrics proxy responses.
