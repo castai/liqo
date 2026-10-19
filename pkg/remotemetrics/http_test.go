@@ -15,8 +15,10 @@
 package remotemetrics
 
 import (
+	"compress/gzip"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -47,11 +49,18 @@ var _ = Context("HTTP handler", func() {
 	var handler *metricHandler
 	var scraper *countingScraper
 
-	scrape := func() *httptest.ResponseRecorder {
+	scrapeWithEncoding := func(acceptEncoding string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("%s/scrape/cluster1/metrics", basePath), http.NoBody)
+		if acceptEncoding != "" {
+			req.Header.Set("Accept-Encoding", acceptEncoding)
+		}
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
 		return rec
+	}
+
+	scrape := func() *httptest.ResponseRecorder {
+		return scrapeWithEncoding("")
 	}
 
 	BeforeEach(func() {
@@ -94,6 +103,25 @@ var _ = Context("HTTP handler", func() {
 		rec = scrape()
 		Expect(rec.Code).To(Equal(http.StatusOK))
 		Expect(scraper.calls.Load()).To(Equal(int32(2)))
+	})
+
+	It("should serve gzip-encoded metrics to clients accepting them", func() {
+		rec := scrapeWithEncoding("gzip")
+		Expect(rec.Code).To(Equal(http.StatusOK))
+		Expect(rec.Header().Get("Content-Encoding")).To(Equal("gzip"))
+		Expect(rec.Header().Get("Content-Type")).To(Equal("text/plain"))
+
+		gz, err := gzip.NewReader(rec.Body)
+		Expect(err).ToNot(HaveOccurred())
+		body, err := io.ReadAll(gz)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(string(body)).To(ContainSubstring("metric1{namespace=\"namespace1\",pod=\"pod1\"} 1 1000000000"))
+
+		By("serving plain metrics to the other clients from the same cache entry")
+		rec = scrape()
+		Expect(rec.Header().Get("Content-Encoding")).To(BeEmpty())
+		Expect(rec.Body.String()).To(Equal(string(body)))
+		Expect(scraper.calls.Load()).To(Equal(int32(1)))
 	})
 
 	It("should briefly cache failed scrapes", func() {

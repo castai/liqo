@@ -202,15 +202,23 @@ func (nls *NamespacedLocalStoragePVCReflector) Handle(ctx context.Context, name 
 	tracer.Step("Applied the remote PersistentVolumeClaim")
 
 	// Forge and apply the remote PV, bound to the remote PVC.
+	// Retrieve the remote PV before applying it, to detect whether the apply actually modified it.
+	previousPV, err := nls.remotePersistentVolumes.Get(remotePVName)
+	utilruntime.Must(client.IgnoreNotFound(err))
 	remotePVApply := forgeRemotePV(localPV, remotePVC, nls.RemoteNamespace(), nls.ForgingOpts)
-	if _, err = nls.remotePersistentVolumesClient.Apply(ctx, remotePVApply, forge.ApplyOptions()); err != nil {
+	appliedPV, err := nls.remotePersistentVolumesClient.Apply(ctx, remotePVApply, forge.ApplyOptions())
+	if err != nil {
 		klog.Errorf("Error applying remote PersistentVolume %q: %v", remotePVName, err.Error())
 		nls.Event(local, corev1.EventTypeWarning, forge.EventFailedReflection, forge.EventFailedReflectionMsg(err))
 		return err
 	}
 	tracer.Step("Applied the remote PersistentVolume")
 
-	nls.Event(local, corev1.EventTypeNormal, forge.EventSuccessfulReflection, forge.EventSuccessfulReflectionMsg())
+	// Record the success only if the remote objects were actually modified, to avoid emitting an event for each
+	// no-op reconciliation (e.g., the one triggered by the remote echo of the applies themselves).
+	if generic.IsObjectChanged(remote, remotePVC) || generic.IsObjectChanged(previousPV, appliedPV) {
+		nls.Event(local, corev1.EventTypeNormal, forge.EventSuccessfulReflection, forge.EventSuccessfulReflectionMsg())
+	}
 	klog.V(4).Infof("Handle of local PersistentVolumeClaim %q (remote: %q) finished", nls.LocalRef(name), nls.RemoteRef(name))
 	return nil
 }

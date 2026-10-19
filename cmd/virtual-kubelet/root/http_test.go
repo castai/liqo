@@ -15,6 +15,8 @@
 package root
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"errors"
 	"io"
@@ -39,23 +41,46 @@ var _ = Describe("Metrics proxy routes", func() {
 		mux        *http.ServeMux
 		calls      atomic.Int64
 		failScrape atomic.Bool
+		statusCode atomic.Int64
+		// remoteGzip makes the fake remote behave as a metric agent serving gzip-encoded responses when requested.
+		remoteGzip     atomic.Bool
+		remoteGzipped  []byte
+		acceptEncoding atomic.Value
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
 		calls.Store(0)
 		failScrape.Store(false)
+		statusCode.Store(http.StatusOK)
+		remoteGzip.Store(false)
+		acceptEncoding.Store("")
+
+		var buf bytes.Buffer
+		gz := gzip.NewWriter(&buf)
+		_, err := gz.Write([]byte("metrics-payload"))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(gz.Close()).To(Succeed())
+		remoteGzipped = buf.Bytes()
 
 		cl := &fake.RESTClient{
 			NegotiatedSerializer: clientscheme.Codecs.WithoutConversion(),
 			GroupVersion:         schema.GroupVersion{Group: "metrics.liqo.io", Version: "v1beta1"},
-			Client: fake.CreateHTTPClient(func(*http.Request) (*http.Response, error) {
+			Client: fake.CreateHTTPClient(func(req *http.Request) (*http.Response, error) {
 				calls.Add(1)
+				acceptEncoding.Store(req.Header.Get("Accept-Encoding"))
 				if failScrape.Load() {
 					return nil, errors.New("scrape failure")
 				}
+				if remoteGzip.Load() && strings.Contains(req.Header.Get("Accept-Encoding"), "gzip") {
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Header:     http.Header{"Content-Type": []string{"text/plain"}, "Content-Encoding": []string{"gzip"}},
+						Body:       io.NopCloser(bytes.NewReader(remoteGzipped)),
+					}, nil
+				}
 				return &http.Response{
-					StatusCode: http.StatusOK,
+					StatusCode: int(statusCode.Load()),
 					Header:     http.Header{"Content-Type": []string{"text/plain"}},
 					Body:       io.NopCloser(strings.NewReader("metrics-payload")),
 				}, nil
@@ -66,16 +91,80 @@ var _ = Describe("Metrics proxy routes", func() {
 		attachMetricsRoutes(ctx, mux, cl, clusterID, "", 15*time.Second)
 	})
 
-	doRequest := func(path string) *httptest.ResponseRecorder {
+	doRequestWithEncoding := func(path, acceptEncoding string) *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()
-		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, http.NoBody))
+		req := httptest.NewRequest(http.MethodGet, path, http.NoBody)
+		if acceptEncoding != "" {
+			req.Header.Set("Accept-Encoding", acceptEncoding)
+		}
+		mux.ServeHTTP(rec, req)
 		return rec
+	}
+
+	doRequest := func(path string) *httptest.ResponseRecorder {
+		return doRequestWithEncoding(path, "")
 	}
 
 	It("should proxy the remote metrics", func() {
 		rec := doRequest("/metrics/resource")
 		Expect(rec.Code).To(Equal(http.StatusOK))
+		Expect(rec.Header().Get("Content-Encoding")).To(BeEmpty())
+		Expect(rec.Header().Get("Content-Type")).To(Equal("text/plain; charset=utf-8"))
 		Expect(rec.Body.String()).To(Equal("metrics-payload"))
+	})
+
+	It("should serve gzip-encoded metrics to clients accepting them", func() {
+		rec := doRequestWithEncoding("/metrics/resource", "deflate, gzip")
+		Expect(rec.Code).To(Equal(http.StatusOK))
+		Expect(rec.Header().Get("Content-Encoding")).To(Equal("gzip"))
+		Expect(rec.Header().Get("Content-Type")).To(Equal("text/plain; charset=utf-8"))
+
+		gz, err := gzip.NewReader(rec.Body)
+		Expect(err).ToNot(HaveOccurred())
+		body, err := io.ReadAll(gz)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(string(body)).To(Equal("metrics-payload"))
+	})
+
+	It("should serve plain metrics to clients explicitly refusing gzip", func() {
+		rec := doRequestWithEncoding("/metrics/resource", "gzip;q=0")
+		Expect(rec.Code).To(Equal(http.StatusOK))
+		Expect(rec.Header().Get("Content-Encoding")).To(BeEmpty())
+		Expect(rec.Body.String()).To(Equal("metrics-payload"))
+	})
+
+	It("should serve both encodings from the same cache entry", func() {
+		doRequestWithEncoding("/metrics/resource", "gzip")
+		Expect(doRequest("/metrics/resource").Body.String()).To(Equal("metrics-payload"))
+		Expect(calls.Load()).To(BeNumerically("==", 1))
+	})
+
+	It("should request gzip-encoded responses to the remote metric agent", func() {
+		doRequest("/metrics/resource")
+		Expect(acceptEncoding.Load()).To(Equal("gzip"))
+	})
+
+	When("the remote metric agent serves gzip-encoded responses", func() {
+		BeforeEach(func() { remoteGzip.Store(true) })
+
+		It("should serve the received body as-is to clients accepting gzip", func() {
+			rec := doRequestWithEncoding("/metrics/resource", "gzip")
+			Expect(rec.Code).To(Equal(http.StatusOK))
+			Expect(rec.Header().Get("Content-Encoding")).To(Equal("gzip"))
+			Expect(rec.Body.Bytes()).To(Equal(remoteGzipped))
+		})
+
+		It("should serve the body decompressed to the other clients", func() {
+			rec := doRequest("/metrics/resource")
+			Expect(rec.Code).To(Equal(http.StatusOK))
+			Expect(rec.Header().Get("Content-Encoding")).To(BeEmpty())
+			Expect(rec.Body.String()).To(Equal("metrics-payload"))
+		})
+	})
+
+	It("should fail if the remote scrape returns a non-successful status code", func() {
+		statusCode.Store(http.StatusServiceUnavailable)
+		Expect(doRequest("/metrics/resource").Code).To(Equal(http.StatusInternalServerError))
 	})
 
 	It("should serve subsequent requests for the same path from the cache", func() {

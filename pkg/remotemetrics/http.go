@@ -15,10 +15,10 @@
 package remotemetrics
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"sync"
 	"time"
@@ -30,6 +30,8 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/liqotech/liqo/pkg/utils/httpgzip"
 )
 
 const (
@@ -65,7 +67,7 @@ const (
 )
 
 // cacheEntry contains a cached scrape response and its expiration time: either data (successful
-// scrape) or err (failed one) is set.
+// scrape, gzip-compressed) or err (failed one) is set.
 type cacheEntry struct {
 	data      []byte
 	err       error
@@ -258,12 +260,20 @@ func (handler *metricHandler) metricHTTP(w http.ResponseWriter, req *http.Reques
 				return nil, err
 			}
 
-			var buf bytes.Buffer
-			metrics.Write(&buf)
+			// The rendered metrics are compressed while written and cached compressed, as they can be several
+			// MBs large (e.g., cadvisor ones) while compressing by roughly an order of magnitude. This also
+			// reduces the cross-cluster traffic towards the virtual kubelets requesting gzip-encoded responses.
+			compressed, err := httpgzip.CompressWith(func(w io.Writer) error {
+				metrics.Write(w)
+				return nil
+			})
+			if err != nil {
+				return nil, err
+			}
 
-			handler.cacheSet(key, cacheEntry{data: buf.Bytes(), expiresAt: time.Now().Add(handler.cacheTTL)})
+			handler.cacheSet(key, cacheEntry{data: compressed, expiresAt: time.Now().Add(handler.cacheTTL)})
 
-			return buf.Bytes(), nil
+			return compressed, nil
 		})
 		if err != nil {
 			writeScrapeError(w, err)
@@ -272,10 +282,8 @@ func (handler *metricHandler) metricHTTP(w http.ResponseWriter, req *http.Reques
 		data = res.([]byte)
 	}
 
-	w.Header().Set("Content-Type", "text/plain")
-	w.WriteHeader(http.StatusOK)
 	// #nosec G705 -- the endpoint serves text/plain API responses, not HTML; no XSS surface.
-	if _, err := w.Write(data); err != nil {
+	if err := httpgzip.Write(w, req, data, "text/plain"); err != nil {
 		klog.Errorf("failed to write metrics: %s", err)
 	}
 }
