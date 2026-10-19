@@ -156,10 +156,16 @@ func (nsr *NamespacedServiceReflector) Handle(ctx context.Context, name string) 
 	tracer.Step("Remote mutation created")
 
 	defer tracer.Step("Enforced the correctness of the remote object")
-	if _, err := nsr.remoteServicesClient.Apply(ctx, mutation, forge.ApplyOptions()); err != nil {
+	applied, err := nsr.remoteServicesClient.Apply(ctx, mutation, forge.ApplyOptions())
+	if err != nil {
 		klog.Errorf("Failed to enforce remote Service %q (local: %q): %v", nsr.RemoteRef(name), nsr.LocalRef(name), err)
 		nsr.Event(local, corev1.EventTypeWarning, forge.EventFailedReflection, forge.EventFailedReflectionMsg(err))
 		return err
+	}
+
+	if !generic.IsObjectChanged(remote, applied) {
+		klog.V(4).Infof("Remote Service %q already in sync (local: %q)", nsr.RemoteRef(name), nsr.LocalRef(name))
+		return nil
 	}
 
 	klog.Infof("Remote Service %q successfully enforced (local: %q)", nsr.RemoteRef(name), nsr.LocalRef(name))
