@@ -49,7 +49,8 @@ func NewHandler(localLiqoClient liqoclient.Interface, namespace string, resyncPe
 	}
 	localLiqoInformerFactory := liqoinformers.NewSharedInformerFactoryWithOptions(localLiqoClient, resyncPeriod,
 		liqoinformers.WithNamespace(namespace),
-		liqoinformers.WithTweakListOptions(localLiqoNamespaceMapTweakListOptions))
+		liqoinformers.WithTweakListOptions(localLiqoNamespaceMapTweakListOptions),
+		liqoinformers.WithTransform(manager.StripManagedFields))
 
 	return &Handler{
 		informerFactory: localLiqoInformerFactory,

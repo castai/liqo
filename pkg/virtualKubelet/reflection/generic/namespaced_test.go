@@ -127,3 +127,18 @@ var _ = Describe("NamespacedReflector tests", func() {
 		})
 	})
 })
+
+var _ = Describe("IsObjectChanged", func() {
+	withResourceVersion := func(rv string) *corev1.ConfigMap {
+		return &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "name", ResourceVersion: rv}}
+	}
+
+	DescribeTable("should detect whether the object was modified",
+		func(before, after *corev1.ConfigMap, expected bool) {
+			Expect(IsObjectChanged(before, after)).To(Equal(expected))
+		},
+		Entry("the object did not exist", nil, withResourceVersion("1"), true),
+		Entry("the resource version changed", withResourceVersion("1"), withResourceVersion("2"), true),
+		Entry("the resource version did not change", withResourceVersion("1"), withResourceVersion("1"), false),
+	)
+})

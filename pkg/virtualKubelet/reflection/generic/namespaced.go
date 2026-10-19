@@ -166,3 +166,15 @@ func (gnr *NamespacedReflector) ForcedAllowOrSkip(obj metav1.Object) (*bool, err
 		return nil, nil
 	}
 }
+
+// IsObjectChanged returns whether a write operation (e.g., a server-side apply) modified the target object, given
+// the object observed before the operation (nil if it did not exist) and the one returned by the API server.
+// The resource version is bumped only when the object is actually modified, hence no-op applies (e.g., triggered
+// by the echo of a previous write) are not considered changes.
+func IsObjectChanged[T interface {
+	comparable
+	metav1.Object
+}](before, after T) bool {
+	var absent T
+	return before == absent || before.GetResourceVersion() != after.GetResourceVersion()
+}

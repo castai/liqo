@@ -44,6 +44,7 @@ import (
 
 	liqov1beta1 "github.com/liqotech/liqo/apis/core/v1beta1"
 	"github.com/liqotech/liqo/pkg/utils/cache"
+	"github.com/liqotech/liqo/pkg/utils/httpgzip"
 	"github.com/liqotech/liqo/pkg/virtualKubelet/reflection/workload"
 	"github.com/liqotech/liqo/pkg/vkMachinery"
 )
@@ -202,10 +203,32 @@ const (
 	metricsProxyErrorCacheTTL = 5 * time.Second
 )
 
-// scrapeResponse is the cached outcome of a proxied scrape: the response body and the status code.
+// scrapeResponse is the cached outcome of a proxied scrape: the gzip-compressed response body.
+// The body is stored compressed, as metrics payloads (e.g., cadvisor ones) can be several MBs large
+// while compressing by roughly an order of magnitude.
 type scrapeResponse struct {
-	data       []byte
-	statusCode int
+	gzipped []byte
+}
+
+// metricsContentType is the content type of the proxied metrics responses.
+const metricsContentType = "text/plain; charset=utf-8"
+
+// scrapeRemote retrieves the given URI and returns its body gzip-compressed. The response is explicitly
+// requested gzip-encoded, which also prevents the transport from transparently decompressing it: if the remote
+// metric agent honors the request, the body is stored as received; otherwise, it is compressed while streamed,
+// so that it is never entirely materialized uncompressed in memory.
+func scrapeRemote(ctx context.Context, cl rest.Interface, uri string) (scrapeResponse, error) {
+	body, err := cl.Get().RequestURI(uri).SetHeader("Accept-Encoding", "gzip").Stream(ctx)
+	if err != nil {
+		return scrapeResponse{}, err
+	}
+	defer body.Close()
+
+	gzipped, err := httpgzip.EnsureCompressed(body)
+	if err != nil {
+		return scrapeResponse{}, err
+	}
+	return scrapeResponse{gzipped: gzipped}, nil
 }
 
 func attachMetricsRoutes(ctx context.Context, mux *http.ServeMux, cl rest.Interface,
@@ -246,20 +269,7 @@ func attachMetricsRoutes(ctx context.Context, mux *http.ServeMux, cl rest.Interf
 		// this way: using r.Context() would let the first caller's cancellation poison the shared
 		// result for every waiter.
 		resp, err := scrapeCache.Do(ctx, uri, func(ctx context.Context) (scrapeResponse, error) {
-			res := cl.Get().RequestURI(uri).Do(ctx)
-			if err := res.Error(); err != nil {
-				return scrapeResponse{}, err
-			}
-
-			var statusCode int
-			res.StatusCode(&statusCode)
-
-			data, err := res.Raw()
-			if err != nil {
-				return scrapeResponse{}, err
-			}
-
-			return scrapeResponse{data: data, statusCode: statusCode}, nil
+			return scrapeRemote(ctx, cl, uri)
 		})
 		if err != nil {
 			klog.Error(err)
@@ -267,8 +277,7 @@ func attachMetricsRoutes(ctx context.Context, mux *http.ServeMux, cl rest.Interf
 			return
 		}
 
-		w.WriteHeader(resp.statusCode)
-		if _, err = w.Write(resp.data); err != nil {
+		if err := httpgzip.Write(w, r, resp.gzipped, metricsContentType); err != nil {
 			klog.Error(err)
 		}
 	}
