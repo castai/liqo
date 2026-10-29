@@ -228,8 +228,13 @@ func (r *InternalFabricReconciler) cleanupPerGatewayReturnRouteConfiguration(ctx
 			Namespace: internalFabric.Namespace,
 		},
 	}
-	err := r.Delete(ctx, route)
-	if client.IgnoreNotFound(err) != nil {
+	if err := r.Get(ctx, client.ObjectKeyFromObject(route), route); err != nil {
+		if client.IgnoreNotFound(err) != nil {
+			return fmt.Errorf("getting per-gateway return path RouteConfiguration %q: %w", name, err)
+		}
+		return nil
+	}
+	if err := client.IgnoreNotFound(r.Delete(ctx, route)); err != nil {
 		return fmt.Errorf("deleting per-gateway return path RouteConfiguration %q: %w", name, err)
 	}
 	return nil

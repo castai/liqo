@@ -24,6 +24,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/utils/ptr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	networkingv1beta1 "github.com/liqotech/liqo/apis/networking/v1beta1"
@@ -58,10 +59,7 @@ func (r *InternalFabricReconciler) ensureFirewallConfiguration(
 
 	// Apply the connection-tracking mark firewall only when multiple gateways are configured.
 	if len(siblings) < 2 {
-		if err := r.Delete(ctx, fw); err != nil && !k8serrors.IsNotFound(err) {
-			return fmt.Errorf("deleting FirewallConfiguration %q: %w", fw.Name, err)
-		}
-		return nil
+		return r.deleteFirewallConfiguration(ctx, fw)
 	}
 
 	_, err := resource.CreateOrUpdate(ctx, r.Client, fw, func() error {
@@ -84,6 +82,19 @@ func (r *InternalFabricReconciler) ensureFirewallConfiguration(
 		return fmt.Errorf("creating or updating FirewallConfiguration %q: %w", fw.Name, err)
 	}
 
+	return nil
+}
+
+func (r *InternalFabricReconciler) deleteFirewallConfiguration(ctx context.Context, fw *networkingv1beta1.FirewallConfiguration) error {
+	if err := r.Get(ctx, client.ObjectKeyFromObject(fw), fw); err != nil {
+		if k8serrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("getting FirewallConfiguration %q: %w", fw.Name, err)
+	}
+	if err := r.Delete(ctx, fw); err != nil && !k8serrors.IsNotFound(err) {
+		return fmt.Errorf("deleting FirewallConfiguration %q: %w", fw.Name, err)
+	}
 	return nil
 }
 
