@@ -280,8 +280,8 @@ func (r *InternalFabricReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&networkingv1beta1.InternalNode{}, internalNodeEnqueuer).
 		Watches(&networkingv1beta1.Connection{}, connectionEnqueuer).
 		Watches(&corev1.Pod{}, gatewayPodEnqueuer, builder.WithPredicates(gatewayPodPredicate)).
-		Owns(&networkingv1beta1.RouteConfiguration{}).
-		Owns(&networkingv1beta1.GeneveTunnel{}).
+		Owns(&networkingv1beta1.RouteConfiguration{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		Owns(&networkingv1beta1.GeneveTunnel{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Complete(r)
 }
 

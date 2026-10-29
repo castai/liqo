@@ -285,7 +285,7 @@ func (r *GeneveTunnelReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 	return ctrl.NewControllerManagedBy(mgr).Named(consts.CtrlInternalFabricFabric).
 		For(&networkingv1beta1.GeneveTunnel{},
-			builder.WithPredicates(nodeSelector)).
+			builder.WithPredicates(nodeSelector, predicate.Or(predicate.GenerationChangedPredicate{}, predicate.LabelChangedPredicate{}))).
 		WatchesRawSource(source.Channel(r.transitions, &handler.EnqueueRequestForObject{})).
 		Watches(&networkingv1beta1.InternalNode{},
 			handler.EnqueueRequestsFromMapFunc(r.internalNodeEnqueuer),
