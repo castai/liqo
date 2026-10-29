@@ -96,3 +96,18 @@ docker buildx build --platform "${ARCHS}" \
     --build-arg COMPONENT="$component" \
     "${tag_args[@]}" -f ./build/liqo/Dockerfile . \
     "$(if $DOCKER_PUSH; then echo --push; else echo --load; fi)"
+
+if $DOCKER_PUSH && command -v cosign >/dev/null; then
+    digest=$(docker buildx imagetools inspect "$image_tag" --format '{{json .Manifest.Digest}}' | tr -d '"')
+    for tag in "$image_tag" "${ghcr_tag:-}"; do
+        [ -n "$tag" ] || continue
+        ref="${tag%:*}@${digest}"
+        echo "Signing container image $ref..."
+        cosign sign --yes "$ref"
+        cosign verify \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-identity-regexp "${COSIGN_IDENTITY_REGEXP:-^https://github.com/castai/liqo/}" \
+            "$ref" >/dev/null
+        echo "Signed and verified $ref."
+    done
+fi
