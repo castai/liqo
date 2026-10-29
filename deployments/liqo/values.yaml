@@ -246,8 +246,8 @@ networking:
         lossThreshold: 5
         # -- Set the interval between two consecutive pings
         interval: 10s
-        # -- Set the interval at which the connection resource status is updated
-        updateStatusInterval: 10s
+        # -- Set the interval at which the GeneveTunnel resource status is updated
+        updateStatusInterval: 60s
         # -- The port used for the conncheck
         port: 54321
 

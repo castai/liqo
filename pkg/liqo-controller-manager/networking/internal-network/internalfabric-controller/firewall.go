@@ -85,8 +85,7 @@ func (r *InternalFabricReconciler) ensureFirewallConfiguration(
 	return nil
 }
 
-func (r *InternalFabricReconciler) deleteFirewallConfiguration(ctx context.Context,
-	fw *networkingv1beta1.FirewallConfiguration) error {
+func (r *InternalFabricReconciler) deleteFirewallConfiguration(ctx context.Context, fw *networkingv1beta1.FirewallConfiguration) error {
 	if err := r.Get(ctx, client.ObjectKeyFromObject(fw), fw); err != nil {
 		if k8serrors.IsNotFound(err) {
 			return nil
