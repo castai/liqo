@@ -208,7 +208,8 @@ func (r *ConnectionsReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	})
 
 	return ctrl.NewControllerManagedBy(mgr).Named(consts.CtrlConnection).
-		For(&networkingv1beta1.Connection{}, builder.WithPredicates(filterByLabelsPredicate, filterByNamePredicate)).
+		For(&networkingv1beta1.Connection{},
+			builder.WithPredicates(filterByLabelsPredicate, filterByNamePredicate, predicate.GenerationChangedPredicate{})).
 		WatchesRawSource(source.Channel(r.transitions, &handler.EnqueueRequestForObject{})).
 		Complete(r)
 }
