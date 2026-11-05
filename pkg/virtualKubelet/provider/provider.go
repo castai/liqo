@@ -22,6 +22,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -42,6 +43,7 @@ import (
 	"github.com/liqotech/liqo/pkg/virtualKubelet/reflection/exposition"
 	"github.com/liqotech/liqo/pkg/virtualKubelet/reflection/manager"
 	"github.com/liqotech/liqo/pkg/virtualKubelet/reflection/namespacemap"
+	networkpolicyreflector "github.com/liqotech/liqo/pkg/virtualKubelet/reflection/networkpolicy"
 	"github.com/liqotech/liqo/pkg/virtualKubelet/reflection/resources"
 	"github.com/liqotech/liqo/pkg/virtualKubelet/reflection/storage"
 	"github.com/liqotech/liqo/pkg/virtualKubelet/reflection/workload"
@@ -80,6 +82,11 @@ type InitConfig struct {
 	EnableLoadBalancer              bool
 	RemoteRealLoadBalancerClassName string
 	EnableMetrics                   bool
+
+	// EnableNetworkPolicyReflection enables the consumer-side NetworkPolicy exporter.
+	EnableNetworkPolicyReflection bool
+	// NetworkPolicySourceProfile is the declared source CNI semantics profile.
+	NetworkPolicySourceProfile string
 
 	// StatsSummaryCacheTTL is the time-to-live of the cached node stats summary.
 	StatsSummaryCacheTTL time.Duration
@@ -175,6 +182,24 @@ func NewLiqoProvider(ctx context.Context, cfg *InitConfig, eb record.EventBroadc
 
 	if !cfg.DisableIPReflection {
 		reflectionManager.With(exposition.NewEndpointSliceReflector(cfg.LocalPodCIDRs, ptr.To(cfg.ReflectorsConfigs[resources.EndpointSlice])))
+	}
+
+	if cfg.EnableNetworkPolicyReflection {
+		networkPolicyConfig := cfg.ReflectorsConfigs[resources.NetworkPolicy]
+		if networkPolicyConfig.NumWorkers == 0 {
+			return nil, errors.New("NetworkPolicy reflection requires a positive number of workers")
+		}
+		reflectionManager.With(networkpolicyreflector.NewNetworkPolicyReflector(
+			dynamic.NewForConfigOrDie(cfg.LocalConfig),
+			dynamic.NewForConfigOrDie(cfg.RemoteConfig),
+			cfg.InformerResyncPeriod,
+			cfg.LiqoNamespace,
+			cfg.LocalCluster,
+			cfg.RemoteCluster,
+			cfg.LocalPodCIDRs,
+			cfg.NetworkPolicySourceProfile,
+			networkPolicyConfig.NumWorkers,
+		))
 	}
 
 	draSupported, err := dra.IsDRASupportedOnBothClusters(localClient, remoteClient)

@@ -69,11 +69,13 @@ var DefaultReflectorsWorkers = map[resources.ResourceReflected]uint{
 	resources.Event:                 3,
 	resources.ResourceSlice:         1,
 	resources.ResourceClaim:         3,
+	resources.NetworkPolicy:         3,
 }
 
 // DefaultReflectorsTypes contains the default type of reflection for each reflected resource.
 var DefaultReflectorsTypes = map[resources.ResourceReflected]offloadingv1beta1.ReflectionType{
 	resources.Pod:                   offloadingv1beta1.CustomLiqo,
+	resources.NetworkPolicy:         offloadingv1beta1.CustomLiqo,
 	resources.Service:               offloadingv1beta1.DenyList,
 	resources.Ingress:               offloadingv1beta1.DenyList,
 	resources.ConfigMap:             offloadingv1beta1.DenyList,
@@ -107,6 +109,11 @@ type Opts struct {
 	ForeignCluster      argsutils.ClusterIDFlags
 	DisableIPReflection bool
 	LocalPodCIDRs       []string
+
+	// EnableNetworkPolicyReflection enables the consumer-side NetworkPolicy exporter.
+	EnableNetworkPolicyReflection bool
+	// NetworkPolicySourceProfile is the declared source CNI semantics profile.
+	NetworkPolicySourceProfile string
 
 	// Sets the addresses to listen for requests from the Kubernetes API server
 	NodeIP          string
@@ -167,6 +174,8 @@ func NewOpts() *Opts {
 		FallbackGracePeriod:  DefaultFallbackGracePeriod,
 
 		DisableIPReflection: false,
+
+		EnableNetworkPolicyReflection: false,
 
 		CertificateType: argsutils.NewEnum([]string{CertificateTypeKubelet, CertificateTypeAWS, CertificateTypeSelfSigned}, CertificateTypeKubelet),
 		ListenPort:      DefaultListenPort,

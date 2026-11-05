@@ -17,12 +17,14 @@ package shadowpodctrl
 import (
 	"context"
 	"slices"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	corev1apply "k8s.io/client-go/applyconfigurations/core/v1"
 	"k8s.io/client-go/tools/record"
@@ -43,11 +45,21 @@ import (
 	"github.com/liqotech/liqo/pkg/virtualKubelet/forge"
 )
 
+// NetworkPolicyGate decides whether a new ShadowPod may be materialized, based on the
+// network policy inventory acknowledgement of its source namespace.
+type NetworkPolicyGate interface {
+	Check(ctx context.Context, namespace, sourceClusterID, sourceNamespace string) (bool, string, error)
+}
+
 // Reconciler reconciles a ShadowPod object.
 type Reconciler struct {
 	client.Client
 	Scheme   *runtime.Scheme
 	Recorder record.EventRecorder
+
+	// NetworkPolicyGate, when set, blocks the creation of new native Pods until the source namespace
+	// network policy inventory has been acknowledged by the provider.
+	NetworkPolicyGate NetworkPolicyGate
 }
 
 const (
@@ -57,6 +69,9 @@ const (
 	EventReasonFailedCreatePod = "FailedCreatePod"
 	// EventReasonCreatedPod is the event reason when successfully creating a pod.
 	EventReasonCreatedPod = "CreatedPod"
+	// EventReasonWaitingForNetworkPolicy is the event reason when a pod is waiting for the network
+	// policy inventory to be acknowledged.
+	EventReasonWaitingForNetworkPolicy = "WaitingForNetworkPolicyInventory"
 )
 
 // +kubebuilder:rbac:groups=offloading.liqo.io,resources=shadowpods,verbs=get;list;watch;update;patch;delete
@@ -125,6 +140,19 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, nil
 	}
 
+	if r.NetworkPolicyGate != nil {
+		allowed, reason, err := r.checkNetworkPolicyGate(ctx, &shadowPod, remoteClusterID)
+		if err != nil {
+			klog.Errorf("unable to check the network policy gate for shadowpod %q: %v", klog.KObj(&shadowPod), err)
+			return ctrl.Result{}, err
+		}
+		if !allowed {
+			r.Recorder.Eventf(&shadowPod, corev1.EventTypeNormal, EventReasonWaitingForNetworkPolicy,
+				"Waiting for the network policy inventory: %s", reason)
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
+	}
+
 	// ...Else, a brand new Pod must be created, based on the shadowpod.
 	newPod := corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -156,6 +184,18 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	klog.Infof("created pod %q for shadowpod %q", klog.KObj(&newPod), klog.KObj(&shadowPod))
 
 	return ctrl.Result{}, nil
+}
+
+// checkNetworkPolicyGate resolves the source namespace of the ShadowPod and asks the gate whether
+// new pods may be materialized.
+func (r *Reconciler) checkNetworkPolicyGate(ctx context.Context, shadowPod *offloadingv1beta1.ShadowPod,
+	remoteClusterID liqov1beta1.ClusterID) (bool, string, error) {
+	var namespace corev1.Namespace
+	if err := r.Get(ctx, types.NamespacedName{Name: shadowPod.Namespace}, &namespace); err != nil {
+		return false, "NamespaceUnavailable", err
+	}
+	sourceNamespace := namespace.Annotations[consts.RemoteNamespaceOriginalNameAnnotationKey]
+	return r.NetworkPolicyGate.Check(ctx, shadowPod.Namespace, string(remoteClusterID), sourceNamespace)
 }
 
 // SetupWithManager monitors only updates on ShadowPods.

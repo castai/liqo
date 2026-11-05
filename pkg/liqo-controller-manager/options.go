@@ -73,16 +73,18 @@ type Options struct {
 	GlobalAnnotations                args.StringMap
 
 	// Offloading module
-	EnableStorage               bool
-	VirtualStorageClassName     string
-	RealStorageClassName        string
-	StorageNamespace            string
-	EnableNodeFailureController bool
-	ShadowPodWorkers            int
-	ShadowEndpointSliceWorkers  int
-	DenyDirectConnections       bool
-	LocalPodCIDRs               []string
-	VkOptionsDefaultTemplate    string
+	EnableStorage                 bool
+	VirtualStorageClassName       string
+	RealStorageClassName          string
+	StorageNamespace              string
+	EnableNodeFailureController   bool
+	ShadowPodWorkers              int
+	ShadowEndpointSliceWorkers    int
+	DenyDirectConnections         bool
+	EnableNetworkPolicyReflection bool
+	ShadowNetworkPolicyWorkers    int
+	LocalPodCIDRs                 []string
+	VkOptionsDefaultTemplate      string
 
 	// Cross module
 	EnableAPIServerProxyIPRemapping bool

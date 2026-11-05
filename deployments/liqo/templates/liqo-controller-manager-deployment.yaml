@@ -132,6 +132,10 @@ spec:
           {{- if .Values.networking.denyDirectConnections }}
           - --deny-direct-connections
           {{- end }}
+          {{- if .Values.offloading.networkPolicyReflection.enabled }}
+          - --enable-network-policy-reflection
+          - --shadow-networkpolicy-ctrl-workers={{ .Values.offloading.networkPolicyReflection.workers }}
+          {{- end }}
           {{- if .Values.common.extraArgs }}
           {{- toYaml .Values.common.extraArgs | nindent 10 }}
           {{- end }}

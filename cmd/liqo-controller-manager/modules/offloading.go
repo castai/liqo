@@ -37,6 +37,7 @@ import (
 	nodefailurectrl "github.com/liqotech/liqo/pkg/liqo-controller-manager/offloading/nodefailure-controller"
 	podstatusctrl "github.com/liqotech/liqo/pkg/liqo-controller-manager/offloading/podstatus-controller"
 	shadowepsctrl "github.com/liqotech/liqo/pkg/liqo-controller-manager/offloading/shadowendpointslice-controller"
+	shadownpctrl "github.com/liqotech/liqo/pkg/liqo-controller-manager/offloading/shadownetworkpolicy-controller"
 	shadowpodctrl "github.com/liqotech/liqo/pkg/liqo-controller-manager/offloading/shadowpod-controller"
 	liqostorageprovisioner "github.com/liqotech/liqo/pkg/liqo-controller-manager/offloading/storageprovisioner"
 	virtualnodectrl "github.com/liqotech/liqo/pkg/liqo-controller-manager/offloading/virtualnode-controller"
@@ -47,21 +48,23 @@ import (
 
 // OffloadingOption defines the options to setup the offloading module.
 type OffloadingOption struct {
-	Clientset                   *kubernetes.Clientset
-	LocalClusterID              liqov1beta1.ClusterID
-	NamespaceManager            tenantnamespace.Manager
-	LiqoNamespace               string
-	LocalPodCIDRs               []string
-	VkOptsDefaultTemplate       *corev1.ObjectReference
-	EnableStorage               bool
-	VirtualStorageClassName     string
-	RealStorageClassName        string
-	StorageNamespace            string
-	EnableNodeFailureController bool
-	ShadowPodWorkers            int
-	ShadowEndpointSliceWorkers  int
-	DenyDirectConnections       bool
-	ResyncPeriod                time.Duration
+	Clientset                     *kubernetes.Clientset
+	LocalClusterID                liqov1beta1.ClusterID
+	NamespaceManager              tenantnamespace.Manager
+	LiqoNamespace                 string
+	LocalPodCIDRs                 []string
+	VkOptsDefaultTemplate         *corev1.ObjectReference
+	EnableStorage                 bool
+	VirtualStorageClassName       string
+	RealStorageClassName          string
+	StorageNamespace              string
+	EnableNodeFailureController   bool
+	ShadowPodWorkers              int
+	ShadowEndpointSliceWorkers    int
+	DenyDirectConnections         bool
+	EnableNetworkPolicyReflection bool
+	ShadowNetworkPolicyWorkers    int
+	ResyncPeriod                  time.Duration
 }
 
 // NewOffloadingOption creates a new OffloadingOption with the given parameters.
@@ -78,21 +81,23 @@ func NewOffloadingOption(clientset *kubernetes.Clientset, localClusterID liqov1b
 	}
 
 	return &OffloadingOption{
-		Clientset:                   clientset,
-		LocalClusterID:              localClusterID,
-		NamespaceManager:            namespaceManager,
-		LiqoNamespace:               opts.LiqoNamespace,
-		LocalPodCIDRs:               opts.LocalPodCIDRs,
-		VkOptsDefaultTemplate:       vkOptsDefaultTemplate,
-		EnableStorage:               opts.EnableStorage,
-		VirtualStorageClassName:     opts.VirtualStorageClassName,
-		RealStorageClassName:        opts.RealStorageClassName,
-		StorageNamespace:            opts.StorageNamespace,
-		EnableNodeFailureController: opts.EnableNodeFailureController,
-		ShadowPodWorkers:            opts.ShadowPodWorkers,
-		ShadowEndpointSliceWorkers:  opts.ShadowEndpointSliceWorkers,
-		DenyDirectConnections:       opts.DenyDirectConnections,
-		ResyncPeriod:                opts.ResyncPeriod,
+		Clientset:                     clientset,
+		LocalClusterID:                localClusterID,
+		NamespaceManager:              namespaceManager,
+		LiqoNamespace:                 opts.LiqoNamespace,
+		LocalPodCIDRs:                 opts.LocalPodCIDRs,
+		VkOptsDefaultTemplate:         vkOptsDefaultTemplate,
+		EnableStorage:                 opts.EnableStorage,
+		VirtualStorageClassName:       opts.VirtualStorageClassName,
+		RealStorageClassName:          opts.RealStorageClassName,
+		StorageNamespace:              opts.StorageNamespace,
+		EnableNodeFailureController:   opts.EnableNodeFailureController,
+		ShadowPodWorkers:              opts.ShadowPodWorkers,
+		ShadowEndpointSliceWorkers:    opts.ShadowEndpointSliceWorkers,
+		DenyDirectConnections:         opts.DenyDirectConnections,
+		EnableNetworkPolicyReflection: opts.EnableNetworkPolicyReflection,
+		ShadowNetworkPolicyWorkers:    opts.ShadowNetworkPolicyWorkers,
+		ResyncPeriod:                  opts.ResyncPeriod,
 	}, nil
 }
 
@@ -141,6 +146,31 @@ func SetupOffloadingModule(ctx context.Context, mgr manager.Manager, opts *Offlo
 		Scheme:   mgr.GetScheme(),
 		Recorder: mgr.GetEventRecorderFor("shadowpod-controller"),
 	}
+
+	if opts.EnableNetworkPolicyReflection {
+		shadowNetworkPolicyReconciler := &shadownpctrl.Reconciler{
+			Client:   mgr.GetClient(),
+			Scheme:   mgr.GetScheme(),
+			Recorder: mgr.GetEventRecorderFor("shadownetworkpolicy-controller"),
+		}
+		if err = shadowNetworkPolicyReconciler.SetupWithManager(ctx, mgr, opts.ShadowNetworkPolicyWorkers); err != nil {
+			klog.Errorf("Unable to setup the shadownetworkpolicy reconciler: %v", err)
+			return err
+		}
+
+		shadowNetworkPolicySetReconciler := &shadownpctrl.SetReconciler{
+			Client:   mgr.GetClient(),
+			Scheme:   mgr.GetScheme(),
+			Recorder: mgr.GetEventRecorderFor("shadownetworkpolicyset-controller"),
+		}
+		if err = shadowNetworkPolicySetReconciler.SetupWithManager(ctx, mgr, opts.ShadowNetworkPolicyWorkers); err != nil {
+			klog.Errorf("Unable to setup the shadownetworkpolicyset reconciler: %v", err)
+			return err
+		}
+
+		shadowPodReconciler.NetworkPolicyGate = &shadownpctrl.Gate{Client: mgr.GetClient()}
+	}
+
 	if err = shadowPodReconciler.SetupWithManager(mgr, opts.ShadowPodWorkers); err != nil {
 		klog.Errorf("Unable to setup the shadowpod reconciler: %v", err)
 		return err

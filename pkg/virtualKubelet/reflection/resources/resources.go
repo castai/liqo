@@ -24,6 +24,7 @@ const (
 	EndpointSlice         ResourceReflected = "endpointslice"
 	Ingress               ResourceReflected = "ingress"
 	ConfigMap             ResourceReflected = "configmap"
+	NetworkPolicy         ResourceReflected = "networkpolicy"
 	Secret                ResourceReflected = "secret"
 	ServiceAccount        ResourceReflected = "serviceaccount"
 	PersistentVolumeClaim ResourceReflected = "persistentvolumeclaim"
@@ -35,7 +36,7 @@ const (
 
 // Reflectors is the list of all resources that can be reflected.
 var Reflectors = []ResourceReflected{
-	Pod, Service, EndpointSlice, Ingress, ConfigMap, Secret, ServiceAccount, PersistentVolumeClaim, Event,
+	Pod, Service, EndpointSlice, Ingress, ConfigMap, Secret, ServiceAccount, PersistentVolumeClaim, Event, NetworkPolicy,
 	LocalStoragePVC, ResourceSlice, ResourceClaim,
 }
 

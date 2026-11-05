@@ -193,6 +193,18 @@ rules:
   - update
   - watch
 - apiGroups:
+  - networking.k8s.io
+  resources:
+  - networkpolicies
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - networking.liqo.io
   resources:
   - configurations
@@ -269,6 +281,8 @@ rules:
   - namespaceoffloadings/status
   - quotas
   - shadowendpointslices
+  - shadownetworkpolicies
+  - shadownetworkpolicysets
   - virtualnodes
   - virtualnodes/finalizers
   - virtualnodes/status
@@ -285,6 +299,8 @@ rules:
   resources:
   - namespacemaps/finalizers
   - namespaceoffloadings/finalizers
+  - shadownetworkpolicies/status
+  - shadownetworkpolicysets/status
   - shadowpods/finalizers
   - shadowpods/status
   verbs:

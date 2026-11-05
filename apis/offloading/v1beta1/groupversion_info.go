@@ -83,6 +83,24 @@ var (
 	// ShadowEndpointSliceGroupVersionResource is groupResourceVersion used to register these objects.
 	ShadowEndpointSliceGroupVersionResource = SchemeGroupVersion.WithResource(ShadowEndpointSliceResource)
 
+	// ShadowNetworkPolicyResource is the resource name used to register the ShadowNetworkPolicy CRD.
+	ShadowNetworkPolicyResource = "shadownetworkpolicies"
+
+	// ShadowNetworkPolicyGroupResource is group resource used to register these objects.
+	ShadowNetworkPolicyGroupResource = schema.GroupResource{Group: SchemeGroupVersion.Group, Resource: ShadowNetworkPolicyResource}
+
+	// ShadowNetworkPolicyGroupVersionResource is groupResourceVersion used to register these objects.
+	ShadowNetworkPolicyGroupVersionResource = SchemeGroupVersion.WithResource(ShadowNetworkPolicyResource)
+
+	// ShadowNetworkPolicySetResource is the resource name used to register the ShadowNetworkPolicySet CRD.
+	ShadowNetworkPolicySetResource = "shadownetworkpolicysets"
+
+	// ShadowNetworkPolicySetGroupResource is group resource used to register these objects.
+	ShadowNetworkPolicySetGroupResource = schema.GroupResource{Group: SchemeGroupVersion.Group, Resource: ShadowNetworkPolicySetResource}
+
+	// ShadowNetworkPolicySetGroupVersionResource is groupResourceVersion used to register these objects.
+	ShadowNetworkPolicySetGroupVersionResource = SchemeGroupVersion.WithResource(ShadowNetworkPolicySetResource)
+
 	// VkOptionsTemplateResource is the resource name used to register the VkOptionsTemplate CRD.
 	VkOptionsTemplateResource = "vkoptionstemplates"
 

@@ -11,6 +11,12 @@
 {{- $vkargs = append $vkargs "--disable-ip-reflection" }}
 {{- end }}
 {{- end }}
+{{- /* Configure NetworkPolicy reflection, if enabled. */ -}}
+{{- if .Values.offloading.networkPolicyReflection.enabled }}
+{{- $_ := required "offloading.networkPolicyReflection.sourceProfile is required when networkPolicyReflection is enabled" .Values.offloading.networkPolicyReflection.sourceProfile }}
+{{- $vkargs = append $vkargs "--enable-network-policy-reflection=true" }}
+{{- $vkargs = append $vkargs (printf "--network-policy-source-profile=%s" .Values.offloading.networkPolicyReflection.sourceProfile) }}
+{{- end }}
 {{- /* Configure the appropriate certificate generation approach on EKS clusters, if not overridden by the user */ -}}
 {{- if .Values.authentication.awsConfig.accessKeyId }}
 {{- if not (or (has "--certificate-type=kubelet" $vkargs ) (has "--certificate-type=aws" $vkargs ) (has "--certificate-type=self-signed" $vkargs )) }}
@@ -76,6 +82,8 @@ spec:
       workers: {{ .Values.offloading.reflection.resourceslice.workers }}
     resourceclaim:
       workers: {{ .Values.offloading.reflection.resourceclaim.workers }}
+    networkpolicy:
+      workers: {{ .Values.offloading.networkPolicyReflection.workers }}
   {{- if .Values.virtualKubelet.extra.resources }}
   resources:
     {{- toYaml .Values.virtualKubelet.extra.resources | nindent 4 }}

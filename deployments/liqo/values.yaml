@@ -318,6 +318,14 @@ offloading:
   # This flag is cluster-wide, but you can configure the preferred behaviour for each VirtualNode
   # by setting the "disableNetworkCheck" field in the resource Spec.
   disableNetworkCheck: false
+  # NetworkPolicy reflection configuration (opt-in, disabled by default).
+  networkPolicyReflection:
+    # -- Enable NetworkPolicy reflection from consumer namespaces to the provider.
+    enabled: false
+    # -- Source CNI semantics profile. Required when enabled. Only "Literal" is supported.
+    sourceProfile: ""
+    # -- Number of workers used to reconcile ShadowNetworkPolicy resources.
+    workers: 3
   runtimeClass:
     # -- Name of the runtime class to use for offloading.
     name: liqo

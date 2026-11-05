@@ -48,6 +48,12 @@ const (
 	ManagedByShadowPodValue = "shadowpod"
 	// ManagedByShadowEndpointSliceValue it the label value used to indicate that a given resource is managed by a ShadowEndpointSlice.
 	ManagedByShadowEndpointSliceValue = "shadowendpointslice"
+	// ManagedByShadowNetworkPolicyValue is the label value used to indicate that a given resource is managed by a ShadowNetworkPolicy.
+	ManagedByShadowNetworkPolicyValue = "shadownetworkpolicy"
+	// LiqoOriginNamespaceLabelKey is the label key identifying the source namespace of a reflected resource.
+	LiqoOriginNamespaceLabelKey = "offloading.liqo.io/origin-namespace"
+	// LiqoOriginNamespaceUIDLabelKey is the label key identifying the source namespace UID of a reflected resource.
+	LiqoOriginNamespaceUIDLabelKey = "offloading.liqo.io/origin-namespace-uid"
 
 	// LocalResourceOwnership label key added to a resource when it is owned by a local component.
 	// Ex. Local networkconfigs are owned by the component that creates them. If the resource is replicated in

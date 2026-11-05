@@ -129,6 +129,19 @@ func runRootCommand(ctx context.Context, c *Opts) error {
 	restcfg.UpdateCfgCertOnSecretChange(ctx, remoteConfig, localClient, c.TenantNamespace, c.RemoteKubeconfigSecretName)
 	restcfg.SetRateLimiter(remoteConfig)
 
+	if c.EnableNetworkPolicyReflection {
+		if c.NetworkPolicySourceProfile == "" {
+			return fmt.Errorf("the --network-policy-source-profile flag is required when NetworkPolicy reflection is enabled")
+		}
+		if c.DisableIPReflection {
+			return fmt.Errorf("NetworkPolicy reflection requires IP reflection to be enabled")
+		}
+		if c.ReflectorsWorkers[string(resources.NetworkPolicy)] == nil ||
+			*c.ReflectorsWorkers[string(resources.NetworkPolicy)] == 0 {
+			return fmt.Errorf("NetworkPolicy reflection requires a positive number of workers")
+		}
+	}
+
 	// Get reflectors configurations
 	reflectorsConfigs, err := getReflectorsConfigs(c)
 	if err != nil {
@@ -199,10 +212,12 @@ func runRootCommand(ctx context.Context, c *Opts) error {
 		NodeName:      c.NodeName,
 		NodeIP:        c.NodeIP,
 
-		DisableIPReflection:  c.DisableIPReflection,
-		LocalPodCIDRs:        c.LocalPodCIDRs,
-		InformerResyncPeriod: c.InformerResyncPeriod,
-		FallbackGracePeriod:  c.FallbackGracePeriod,
+		DisableIPReflection:           c.DisableIPReflection,
+		LocalPodCIDRs:                 c.LocalPodCIDRs,
+		EnableNetworkPolicyReflection: c.EnableNetworkPolicyReflection,
+		NetworkPolicySourceProfile:    c.NetworkPolicySourceProfile,
+		InformerResyncPeriod:          c.InformerResyncPeriod,
+		FallbackGracePeriod:           c.FallbackGracePeriod,
 
 		ReflectorsConfigs: reflectorsConfigs,
 
@@ -433,6 +448,7 @@ func getVersion(config *rest.Config) string {
 
 func isReflectionTypeNotCustomizable(resource resources.ResourceReflected) bool {
 	return resource == resources.Pod ||
+		resource == resources.NetworkPolicy ||
 		resource == resources.ServiceAccount ||
 		resource == resources.PersistentVolumeClaim ||
 		resource == resources.ResourceSlice ||

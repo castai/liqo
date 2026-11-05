@@ -26,6 +26,7 @@ package local
 // +kubebuilder:rbac:groups=core,resources=serviceaccounts/token,verbs=create
 // +kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;list;watch
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch
+// +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch
 
 // +kubebuilder:rbac:groups=discovery.k8s.io,resources=endpointslices,verbs=get;list;watch
 
@@ -40,7 +41,7 @@ package local
 // +kubebuilder:rbac:groups=certificates.k8s.io,resources=certificatesigningrequests,verbs=create;get;list;watch
 
 // Additional permissions necessary for the networking module
-// +kubebuilder:rbac:groups=ipam.liqo.io,resources=ips,verbs=get;list;watch
+// +kubebuilder:rbac:groups=ipam.liqo.io,resources=ips;networks,verbs=get;list;watch
 // +kubebuilder:rbac:groups=networking.liqo.io,resources=configurations,verbs=get;list;watch
 
 // Permissions for DRA reflection of ResourceSlices, ResourceClaims and DeviceClasses.

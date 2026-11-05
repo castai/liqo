@@ -43,6 +43,10 @@ func InstallFlags(flags *pflag.FlagSet, o *Opts) {
 	flags.BoolVar(&o.DisableIPReflection, "disable-ip-reflection", o.DisableIPReflection,
 		"Disable the IP reflection for the offloaded pods")
 	flags.StringSliceVar(&o.LocalPodCIDRs, "local-podcidr", o.LocalPodCIDRs, "The CIDRs used for the local pods")
+	flags.BoolVar(&o.EnableNetworkPolicyReflection, "enable-network-policy-reflection", o.EnableNetworkPolicyReflection,
+		"Enable the NetworkPolicy reflection to the provider cluster")
+	flags.StringVar(&o.NetworkPolicySourceProfile, "network-policy-source-profile", o.NetworkPolicySourceProfile,
+		"The source CNI semantics profile used to translate NetworkPolicy IPBlocks (e.g. Literal)")
 
 	flags.StringVar(&o.NodeIP, "node-ip", o.NodeIP, "The IP address of the virtual kubelet pod, and assigned to the virtual node as internal address")
 	flags.Var(o.CertificateType, "certificate-type", "The type of virtual kubelet server certificate to generate, among kubelet, aws, self-signed")

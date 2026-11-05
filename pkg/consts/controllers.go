@@ -68,13 +68,15 @@ const (
 	CtrlTenant              = "tenant"
 
 	// Offloading.
-	CtrlNamespaceMap        = "namespacemap"
-	CtrlNamespaceOffloading = "namespaceoffloading"
-	CtrlNodeFailure         = "node_failure"
-	CtrlPodStatus           = "pod_status"
-	CtrlShadowEndpointSlice = "shadowendpointslice"
-	CtrlShadowPod           = "shadowpod"
-	CtrlVirtualNode         = "virtualnode"
+	CtrlNamespaceMap           = "namespacemap"
+	CtrlNamespaceOffloading    = "namespaceoffloading"
+	CtrlNodeFailure            = "node_failure"
+	CtrlPodStatus              = "pod_status"
+	CtrlShadowEndpointSlice    = "shadowendpointslice"
+	CtrlShadowNetworkPolicy    = "shadownetworkpolicy"
+	CtrlShadowNetworkPolicySet = "shadownetworkpolicyset"
+	CtrlShadowPod              = "shadowpod"
+	CtrlVirtualNode            = "virtualnode"
 
 	// Cross modules.
 	CtrlResourceSliceQuotaCreator = "resourceslice_quotacreator"
