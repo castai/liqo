@@ -153,6 +153,29 @@ func (r *NamespaceMapReconciler) deleteNamespace(ctx context.Context, namespaceN
 		return true, nil
 	}
 
+	if r.DrainPolicyNamespaces {
+		// Keep reflected policies in place until all offloaded workloads have stopped.
+		var shadows offloadingv1beta1.ShadowPodList
+		if err := r.List(ctx, &shadows, client.InNamespace(namespaceName)); err != nil {
+			return true, err
+		}
+		for i := range shadows.Items {
+			shadow := &shadows.Items[i]
+			if !shadow.DeletionTimestamp.IsZero() {
+				continue
+			}
+			if err := r.Delete(ctx, shadow, client.Preconditions{UID: &shadow.UID}); client.IgnoreNotFound(err) != nil {
+				return true, err
+			}
+		}
+		var pods corev1.PodList
+		if err := r.List(ctx, &pods, client.InNamespace(namespaceName)); err != nil {
+			return true, err
+		}
+		if len(shadows.Items) > 0 || len(pods.Items) > 0 {
+			return true, fmt.Errorf("waiting for workloads to drain from namespace %s", namespaceName)
+		}
+	}
 	if err = r.Delete(ctx, &namespace); err != nil {
 		return true, fmt.Errorf("failed to delete namespace %q: %w", namespaceName, err)
 	}

@@ -18,6 +18,8 @@ import (
 	"context"
 	"time"
 
+	ipamapi "github.com/liqotech/liqo/apis/ipam/v1alpha1"
+	policyreflection "github.com/liqotech/liqo/pkg/virtualKubelet/reflection/networkpolicy"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -29,6 +31,7 @@ import (
 	"k8s.io/klog/v2"
 	metrics "k8s.io/metrics/pkg/client/clientset/versioned"
 	"k8s.io/utils/ptr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	liqov1beta1 "github.com/liqotech/liqo/apis/core/v1beta1"
 	networkingv1beta1 "github.com/liqotech/liqo/apis/networking/v1beta1"
@@ -49,6 +52,8 @@ import (
 
 func init() {
 	utilruntime.Must(offloadingv1beta1.AddToScheme(scheme.Scheme))
+	utilruntime.Must(networkingv1beta1.AddToScheme(scheme.Scheme))
+	utilruntime.Must(ipamapi.AddToScheme(scheme.Scheme))
 }
 
 // InitConfig is the config passed to initialize the LiqoPodProvider.
@@ -60,11 +65,12 @@ type InitConfig struct {
 	Namespace     string
 	LiqoNamespace string
 
-	NodeName             string
-	NodeIP               string
-	DisableIPReflection  bool
-	LocalPodCIDRs        []string
-	InformerResyncPeriod time.Duration
+	NodeName                string
+	NodeIP                  string
+	DisableIPReflection     bool
+	NetworkPolicyReflection bool
+	LocalPodCIDRs           []string
+	InformerResyncPeriod    time.Duration
 	// FallbackGracePeriod is the delay before the items of a stopped namespace are re-enqueued for
 	// fallback processing. An explicit zero disables the delay (immediate re-enqueue).
 	FallbackGracePeriod time.Duration
@@ -154,6 +160,19 @@ func NewLiqoProvider(ctx context.Context, cfg *InitConfig, eb record.EventBroadc
 		StatsSummaryCacheTTL: cfg.StatsSummaryCacheTTL,
 	}
 
+	var policies *policyreflection.Reflector
+	if cfg.NetworkPolicyReflection {
+		local, err := client.New(cfg.LocalConfig, client.Options{Scheme: scheme.Scheme})
+		if err != nil {
+			return nil, err
+		}
+		remote, err := client.New(cfg.RemoteConfig, client.Options{Scheme: scheme.Scheme})
+		if err != nil {
+			return nil, err
+		}
+		policies = policyreflection.New(local, remote, string(cfg.LocalCluster), string(cfg.RemoteCluster), cfg.LiqoNamespace, cfg.LocalPodCIDRs, cfg.ReflectorsConfigs[resources.NetworkPolicy].NumWorkers)
+		podReflectorConfig.NetworkPolicyGate = policies.CheckReady
+	}
 	podreflector := workload.NewPodReflector(cfg.RemoteConfig, remoteMetricsClient, &podReflectorConfig, ptr.To(cfg.ReflectorsConfigs[resources.Pod]))
 
 	forgingOpts := forge.NewForgingOpts(cfg.OffloadingPatch)
@@ -173,6 +192,9 @@ func NewLiqoProvider(ctx context.Context, cfg *InitConfig, eb record.EventBroadc
 		WithNamespaceHandler(namespacemap.NewHandler(localLiqoClient, cfg.Namespace, cfg.InformerResyncPeriod)).
 		WithFallbackGracePeriod(cfg.FallbackGracePeriod)
 
+	if policies != nil {
+		reflectionManager.With(policies)
+	}
 	if !cfg.DisableIPReflection {
 		reflectionManager.With(exposition.NewEndpointSliceReflector(cfg.LocalPodCIDRs, ptr.To(cfg.ReflectorsConfigs[resources.EndpointSlice])))
 	}

@@ -375,6 +375,11 @@ offloading:
       #   default: true
       # - name: internal
       loadBalancerClasses: []
+    networkpolicy:
+      # -- Reflect supported NetworkPolicies for offloaded namespaces.
+      enabled: true
+      # -- The number of workers used for NetworkPolicy reflection when enabled.
+      workers: 3
     endpointslice:
       # -- The number of workers used for the endpointslices reflector. Set 0 to disable the reflection of endpointslices.
       workers: 10

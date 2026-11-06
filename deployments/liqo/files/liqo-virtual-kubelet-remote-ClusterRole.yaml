@@ -61,6 +61,8 @@ rules:
   - offloading.liqo.io
   resources:
   - shadowendpointslices
+  - shadownetworkpolicies
+  - shadownetworkpolicysets
   - shadowpods
   verbs:
   - create

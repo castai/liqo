@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"net"
 	"reflect"
-	"sync"
+	"slices"
 
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
@@ -35,6 +35,7 @@ import (
 	"k8s.io/utils/trace"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	ipamv1alpha1 "github.com/liqotech/liqo/apis/ipam/v1alpha1"
 	offloadingv1beta1 "github.com/liqotech/liqo/apis/offloading/v1beta1"
 	offloadingv1beta1clients "github.com/liqotech/liqo/pkg/client/clientset/versioned/typed/offloading/v1beta1"
 	ipamv1alpha1listers "github.com/liqotech/liqo/pkg/client/listers/ipam/v1alpha1"
@@ -71,8 +72,6 @@ type NamespacedEndpointSliceReflector struct {
 	localIPs                         ipamv1alpha1listers.IPNamespaceLister
 
 	localPodCIDRs []*net.IPNet
-
-	translations sync.Map
 }
 
 // NewEndpointSliceReflector returns a new EndpointSliceReflector instance.
@@ -117,6 +116,27 @@ func NewNamespacedEndpointSliceReflector(localPodCIDRs []string) func(*options.N
 		_, err = localServices.Informer().AddEventHandler(opts.HandlerFactory(ner.ServiceToEndpointSlicesKeyer))
 		utilruntime.Must(err)
 
+		_, err = localIPs.Informer().AddEventHandler(opts.HandlerFactory(func(object metav1.Object) []types.NamespacedName {
+			ip, ok := object.(*ipamv1alpha1.IP)
+			if !ok {
+				return nil
+			}
+			endpoints, err := ner.localEndpointSlices.List(labels.Everything())
+			if err != nil {
+				return nil
+			}
+			var keys []types.NamespacedName
+			for _, slice := range endpoints {
+				for _, endpoint := range slice.Endpoints {
+					if slices.Contains(endpoint.Addresses, ip.Spec.IP.String()) {
+						keys = append(keys, types.NamespacedName{Namespace: opts.LocalNamespace, Name: slice.Name})
+						break
+					}
+				}
+			}
+			return keys
+		}))
+		utilruntime.Must(err)
 		return ner
 	}
 }
@@ -343,16 +363,11 @@ func (ner *NamespacedEndpointSliceReflector) MapEndpointIPFromIPResource(origina
 	if err != nil {
 		return "", fmt.Errorf("failed to list IPs: %w", err)
 	}
-	for i := range ips {
-		if ips[i].Spec.IP.String() == original {
-			remappedIP := ipamutils.GetRemappedIP(ips[i])
-			if remappedIP == "" {
-				return "", fmt.Errorf("resource IP %q (%q) has not been mapped yet", ips[i].Name, ips[i].Spec.IP)
-			}
-			return remappedIP.String(), nil
-		}
+	allocation, err := ipamutils.EndpointAllocation(ips, original)
+	if err != nil {
+		return original, err
 	}
-	return original, fmt.Errorf("resource IP %s not found", original)
+	return allocation.Status.IP.String(), nil
 }
 
 // MapEndpointIPs maps the local set of addresses to the corresponding remote ones.
@@ -365,35 +380,18 @@ func (ner *NamespacedEndpointSliceReflector) MapEndpointIPs(endpointslice string
 		return originals, nil
 	}
 
-	var translations []string
-	var err error
-
-	// Retrieve the cache for the given endpointslice. The cache is not synchronized,
-	// since we are guaranteed to be the only ones operating on this object.
-	ucache, _ := ner.translations.LoadOrStore(endpointslice, map[string]string{})
-	cache := ucache.(map[string]string)
-
+	translations := make([]string, 0, len(originals))
 	for _, original := range originals {
-		// Check if we already know the translation.
-		translation, found := cache[original]
-
-		if !found {
-			if !ner.isLocalPodIP(original) {
-				// Cache miss -> we need to interact with the IPAM to request the translation.
-				translation, err = ner.MapEndpointIPFromIPResource(original)
-				if err != nil {
-					return nil, fmt.Errorf("failed to translate endpoint IP %v: %w", original, err)
-				}
-			} else {
-				// If the IP is in the local podCIDR we don't need to ask  for a translation.
-				translation = original
+		translation := original
+		if !ner.isLocalPodIP(original) {
+			var err error
+			translation, err = ner.MapEndpointIPFromIPResource(original)
+			if err != nil {
+				return nil, fmt.Errorf("failed to translate endpoint IP %s: %w", original, err)
 			}
-			cache[original] = translation
 		}
 		translations = append(translations, translation)
-		klog.V(6).Infof("Translated local endpoint IP %v to remote %v", original, translation)
 	}
-
 	return translations, nil
 }
 

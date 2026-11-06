@@ -95,6 +95,7 @@ rules:
   - ipam.liqo.io
   resources:
   - ips
+  - networks
   verbs:
   - get
   - list
@@ -103,6 +104,7 @@ rules:
   - networking.k8s.io
   resources:
   - ingresses
+  - networkpolicies
   verbs:
   - get
   - list

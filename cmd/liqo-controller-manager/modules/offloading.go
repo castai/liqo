@@ -37,6 +37,7 @@ import (
 	nodefailurectrl "github.com/liqotech/liqo/pkg/liqo-controller-manager/offloading/nodefailure-controller"
 	podstatusctrl "github.com/liqotech/liqo/pkg/liqo-controller-manager/offloading/podstatus-controller"
 	shadowepsctrl "github.com/liqotech/liqo/pkg/liqo-controller-manager/offloading/shadowendpointslice-controller"
+	shadowpolicyctrl "github.com/liqotech/liqo/pkg/liqo-controller-manager/offloading/shadownetworkpolicy-controller"
 	shadowpodctrl "github.com/liqotech/liqo/pkg/liqo-controller-manager/offloading/shadowpod-controller"
 	liqostorageprovisioner "github.com/liqotech/liqo/pkg/liqo-controller-manager/offloading/storageprovisioner"
 	virtualnodectrl "github.com/liqotech/liqo/pkg/liqo-controller-manager/offloading/virtualnode-controller"
@@ -59,6 +60,7 @@ type OffloadingOption struct {
 	StorageNamespace            string
 	EnableNodeFailureController bool
 	ShadowPodWorkers            int
+	NetworkPolicyReflection     bool
 	ShadowEndpointSliceWorkers  int
 	DenyDirectConnections       bool
 	ResyncPeriod                time.Duration
@@ -90,6 +92,7 @@ func NewOffloadingOption(clientset *kubernetes.Clientset, localClusterID liqov1b
 		StorageNamespace:            opts.StorageNamespace,
 		EnableNodeFailureController: opts.EnableNodeFailureController,
 		ShadowPodWorkers:            opts.ShadowPodWorkers,
+		NetworkPolicyReflection:     opts.NetworkPolicyReflection,
 		ShadowEndpointSliceWorkers:  opts.ShadowEndpointSliceWorkers,
 		DenyDirectConnections:       opts.DenyDirectConnections,
 		ResyncPeriod:                opts.ResyncPeriod,
@@ -119,7 +122,8 @@ func SetupOffloadingModule(ctx context.Context, mgr manager.Manager, opts *Offlo
 	}
 
 	namespaceMapReconciler := &mapsctrl.NamespaceMapReconciler{
-		Client: mgr.GetClient(),
+		Client:                mgr.GetClient(),
+		DrainPolicyNamespaces: opts.NetworkPolicyReflection,
 	}
 	if err = namespaceMapReconciler.SetupWithManager(mgr); err != nil {
 		klog.Errorf("Unable to setup the namespacemap reconciler: %v", err)
@@ -140,6 +144,13 @@ func SetupOffloadingModule(ctx context.Context, mgr manager.Manager, opts *Offlo
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
 		Recorder: mgr.GetEventRecorderFor("shadowpod-controller"),
+	}
+	if opts.NetworkPolicyReflection {
+		policies := &shadowpolicyctrl.Reconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme(), PodCIDRs: opts.LocalPodCIDRs, LiqoNamespace: opts.LiqoNamespace, APIReader: mgr.GetAPIReader()}
+		if err := policies.SetupWithManager(mgr); err != nil {
+			return fmt.Errorf("setting up policy reflection: %w", err)
+		}
+		shadowPodReconciler.NetworkPolicyGate = policies.CheckReady
 	}
 	if err = shadowPodReconciler.SetupWithManager(mgr, opts.ShadowPodWorkers); err != nil {
 		klog.Errorf("Unable to setup the shadowpod reconciler: %v", err)

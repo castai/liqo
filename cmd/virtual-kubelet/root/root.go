@@ -188,11 +188,17 @@ func runRootCommand(ctx context.Context, c *Opts) error {
 	}
 
 	// Initialize the pod provider
+	if c.NetworkPolicyReflection && (!c.VirtualKubeletLeaseEnabled || c.DisableIPReflection ||
+		netConfiguration == nil || reflectorsConfigs[resources.EndpointSlice].NumWorkers == 0 ||
+		reflectorsConfigs[resources.NetworkPolicy].NumWorkers == 0) {
+		return fmt.Errorf("NetworkPolicy reflection requires networking, EndpointSlice reflection, the tenant leader lease, and at least one NetworkPolicy worker")
+	}
 	podcfg := podprovider.InitConfig{
-		LocalConfig:   localConfig,
-		RemoteConfig:  remoteConfig,
-		LocalCluster:  c.HomeCluster.GetClusterID(),
-		RemoteCluster: c.ForeignCluster.GetClusterID(),
+		NetworkPolicyReflection: c.NetworkPolicyReflection,
+		LocalConfig:             localConfig,
+		RemoteConfig:            remoteConfig,
+		LocalCluster:            c.HomeCluster.GetClusterID(),
+		RemoteCluster:           c.ForeignCluster.GetClusterID(),
 
 		Namespace:     c.TenantNamespace,
 		LiqoNamespace: c.LiqoNamespace,
@@ -436,7 +442,8 @@ func isReflectionTypeNotCustomizable(resource resources.ResourceReflected) bool 
 		resource == resources.ServiceAccount ||
 		resource == resources.PersistentVolumeClaim ||
 		resource == resources.ResourceSlice ||
-		resource == resources.ResourceClaim
+		resource == resources.ResourceClaim ||
+		resource == resources.NetworkPolicy
 }
 
 func getReflectorsConfigs(c *Opts) (map[resources.ResourceReflected]offloadingv1beta1.ReflectorConfig, error) {

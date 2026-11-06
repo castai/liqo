@@ -17,6 +17,7 @@ package shadowpodctrl
 import (
 	"context"
 	"slices"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -46,8 +47,9 @@ import (
 // Reconciler reconciles a ShadowPod object.
 type Reconciler struct {
 	client.Client
-	Scheme   *runtime.Scheme
-	Recorder record.EventRecorder
+	Scheme            *runtime.Scheme
+	Recorder          record.EventRecorder
+	NetworkPolicyGate func(context.Context, string, string) error
 }
 
 const (
@@ -77,7 +79,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, err
 	}
 
-	if shadowPod.Status.Phase == corev1.PodSucceeded || shadowPod.Status.Phase == corev1.PodFailed {
+	if !shadowPod.DeletionTimestamp.IsZero() || shadowPod.Status.Phase == corev1.PodSucceeded || shadowPod.Status.Phase == corev1.PodFailed {
 		klog.V(4).Infof("skip: shadowpod %s already in terminal phase %s", shadowPod.GetName(), shadowPod.Status.Phase)
 		return ctrl.Result{}, nil
 	}
@@ -123,6 +125,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	if !ok {
 		klog.Errorf("unable to get remote cluster ID from shadowpod %q", klog.KObj(&shadowPod))
 		return ctrl.Result{}, nil
+	}
+
+	if r.NetworkPolicyGate != nil {
+		if err := r.NetworkPolicyGate(ctx, nsName.Namespace, string(remoteClusterID)); err != nil {
+			klog.V(2).Infof("ShadowPod %s is waiting for NetworkPolicies: %v", nsName, err)
+			return ctrl.Result{RequeueAfter: 2 * time.Second}, nil
+		}
 	}
 
 	// ...Else, a brand new Pod must be created, based on the shadowpod.

@@ -114,6 +114,7 @@ func InitFlags(flagset *pflag.FlagSet, opts *Options) {
 	flagset.StringVar(&opts.RealStorageClassName, "real-storage-class-name", "", "Name of the real storage class to use for the actual volumes")
 	flagset.StringVar(&opts.StorageNamespace, "storage-namespace", "liqo-storage", "Namespace where the liqo storage-related resources are stored")
 	flagset.BoolVar(&opts.EnableNodeFailureController, "enable-node-failure-controller", false, "Enable the node failure controller")
+	flagset.BoolVar(&opts.NetworkPolicyReflection, "enable-network-policy-reflection", false, "Enforce reflected NetworkPolicies before materializing ShadowPods.")
 	flagset.IntVar(&opts.ShadowPodWorkers, "shadow-pod-ctrl-workers", 10, "The number of workers used to reconcile ShadowPod resources.")
 	flagset.IntVar(&opts.ShadowEndpointSliceWorkers, "shadow-endpointslice-ctrl-workers", 10,
 		"The number of workers used to reconcile ShadowEndpointSlice resources.")

@@ -51,6 +51,8 @@ spec:
     service:
       workers: {{ .Values.offloading.reflection.service.workers }}
       type: {{ .Values.offloading.reflection.service.type }}
+    networkpolicy:
+      workers: {{ .Values.offloading.reflection.networkpolicy.workers }}
     endpointslice:
       workers: {{ .Values.offloading.reflection.endpointslice.workers }}
     ingress:
@@ -79,6 +81,9 @@ spec:
   {{- if .Values.virtualKubelet.extra.resources }}
   resources:
     {{- toYaml .Values.virtualKubelet.extra.resources | nindent 4 }}
+  {{- end }}
+  {{- if .Values.offloading.reflection.networkpolicy.enabled }}
+  {{- $vkargs = append $vkargs "--enable-network-policy-reflection" }}
   {{- end }}
   {{- if ge (len $vkargs) 1 }}
   extraArgs:

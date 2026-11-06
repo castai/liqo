@@ -79,6 +79,7 @@ type Options struct {
 	StorageNamespace            string
 	EnableNodeFailureController bool
 	ShadowPodWorkers            int
+	NetworkPolicyReflection     bool
 	ShadowEndpointSliceWorkers  int
 	DenyDirectConnections       bool
 	LocalPodCIDRs               []string
