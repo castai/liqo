@@ -40,6 +40,7 @@ func InstallFlags(flags *pflag.FlagSet, o *Opts) {
 
 	flags.Var(&o.HomeCluster, "home-cluster-id", "The ID of the home cluster")
 	flags.Var(&o.ForeignCluster, "foreign-cluster-id", "The ID of the foreign cluster")
+	flags.BoolVar(&o.NetworkPolicyReflection, "enable-network-policy-reflection", false, "Reflect supported NetworkPolicies to the provider.")
 	flags.BoolVar(&o.DisableIPReflection, "disable-ip-reflection", o.DisableIPReflection,
 		"Disable the IP reflection for the offloaded pods")
 	flags.StringSliceVar(&o.LocalPodCIDRs, "local-podcidr", o.LocalPodCIDRs, "The CIDRs used for the local pods")

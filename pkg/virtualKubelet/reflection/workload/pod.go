@@ -110,6 +110,7 @@ type PodReflector struct {
 
 // PodReflectorConfig represents the configuration of a PodReflector.
 type PodReflectorConfig struct {
+	NetworkPolicyGate   func(context.Context, string, string) error
 	APIServerSupport    forge.APIServerSupportType
 	DisableIPReflection bool
 	HomeAPIServerHost   string

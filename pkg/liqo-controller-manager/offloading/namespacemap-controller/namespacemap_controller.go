@@ -39,6 +39,7 @@ import (
 // NamespaceMapReconciler creates remote namespaces and updates NamespaceMaps Status.
 type NamespaceMapReconciler struct {
 	client.Client
+	DrainPolicyNamespaces bool
 }
 
 // cluster-role

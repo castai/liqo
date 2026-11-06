@@ -175,6 +175,8 @@
 | offloading.reflection.localstoragepvc.type | string | `"DenyList"` | The type of reflection used for the pvc mapped on local storage reflector. Ammitted values: "DenyList", "AllowList". |
 | offloading.reflection.localstoragepvc.workers | int | `1` | The number of workers used for the localstoragepvcs reflector. Set 0 to disable the reflection of localstoragepvcs. |
 | offloading.reflection.persistentvolumeclaim.workers | int | `3` | The number of workers used for the persistentvolumeclaims reflector. Set 0 to disable the reflection of persistentvolumeclaims. |
+| offloading.reflection.networkpolicy.enabled | bool | `false` | Reflect supported NetworkPolicies for offloaded namespaces. |
+| offloading.reflection.networkpolicy.workers | int | `3` | The number of workers used for NetworkPolicy reflection when enabled. |
 | offloading.reflection.pod.workers | int | `10` | The number of workers used for the pods reflector. Set 0 to disable the reflection of pods. |
 | offloading.reflection.resourceclaim.workers | int | `3` | The number of workers used for the DRA ResourceClaim reflector. Set 0 to disable the reflection of ResourceClaims. Reflection is also automatically skipped if the resource.k8s.io/v1 API is not available on either cluster. |
 | offloading.reflection.resourceslice.workers | int | `1` | The number of workers used for the DRA ResourceSlice reflector (leader-only). Set 0 to disable the reflection of ResourceSlices. Reflection is also automatically skipped if the resource.k8s.io/v1 API is not available on either cluster. |

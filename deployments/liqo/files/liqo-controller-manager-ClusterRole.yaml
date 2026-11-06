@@ -193,6 +193,17 @@ rules:
   - update
   - watch
 - apiGroups:
+  - networking.k8s.io
+  resources:
+  - networkpolicies
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - networking.liqo.io
   resources:
   - configurations
@@ -285,6 +296,8 @@ rules:
   resources:
   - namespacemaps/finalizers
   - namespaceoffloadings/finalizers
+  - shadownetworkpolicies/status
+  - shadownetworkpolicysets/status
   - shadowpods/finalizers
   - shadowpods/status
   verbs:
@@ -311,6 +324,16 @@ rules:
 - apiGroups:
   - offloading.liqo.io
   resources:
+  - shadownetworkpolicies
+  - shadownetworkpolicysets
+  - vkoptionstemplates
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - offloading.liqo.io
+  resources:
   - shadowpods
   verbs:
   - delete
@@ -318,14 +341,6 @@ rules:
   - list
   - patch
   - update
-  - watch
-- apiGroups:
-  - offloading.liqo.io
-  resources:
-  - vkoptionstemplates
-  verbs:
-  - get
-  - list
   - watch
 - apiGroups:
   - rbac.authorization.k8s.io

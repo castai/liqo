@@ -25,6 +25,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/dynamic"
@@ -74,6 +75,7 @@ var (
 func init() {
 	_ = clientgoscheme.AddToScheme(scheme)
 	_ = apiextensionsv1.AddToScheme(scheme)
+	_ = networkingv1.AddToScheme(scheme)
 
 	_ = monitoringv1.AddToScheme(scheme)
 
@@ -128,7 +130,9 @@ func run(cmd *cobra.Command, _ []string) error {
 	resource.SetGlobalAnnotations(opts.GlobalAnnotations.StringMap)
 
 	mgr, err := ctrl.NewManager(config, ctrl.Options{
-		MapperProvider: mapper.LiqoMapperProvider(scheme),
+		// The shadow network policy controller watches the core NetworkPolicy resource,
+		// which is not among the group versions added by default by the Liqo mapper.
+		MapperProvider: mapper.LiqoMapperProvider(scheme, networkingv1.SchemeGroupVersion),
 		Scheme:         scheme,
 		Metrics: server.Options{
 			BindAddress: opts.MetricsAddr,

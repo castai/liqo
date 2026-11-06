@@ -236,6 +236,11 @@ func (npr *NamespacedPodReflector) Handle(ctx context.Context, name string) erro
 
 	// If the remote shadowpod does not exist, then create it.
 	if !shadowExists {
+		if npr.config.NetworkPolicyGate != nil {
+			if err := npr.config.NetworkPolicyGate(ctx, local.Namespace, npr.RemoteNamespace()); err != nil {
+				return err
+			}
+		}
 		defer tracer.Step("Ensured the presence of the remote object")
 		if _, err := npr.remoteShadowPodsClient.Create(ctx, target, metav1.CreateOptions{FieldManager: forge.ReflectionFieldManager}); err != nil {
 			if kerrors.IsAlreadyExists(err) {

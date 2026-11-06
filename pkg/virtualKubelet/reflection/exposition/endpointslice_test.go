@@ -525,8 +525,7 @@ var _ = Describe("EndpointSlice Reflection Tests", func() {
 							MapEndpointIPs(EndpointSliceName, input, false)
 					})
 
-					// The IPAMClient is configured to return an error if the same translation is requested twice.
-					It("should succeed (i.e., use the cached values)", func() { Expect(err).ToNot(HaveOccurred()) })
+					It("should succeed with the current allocations", func() { Expect(err).ToNot(HaveOccurred()) })
 					It("should return the same translations", func() { Expect(output).To(ConsistOf("192.168.200.25", "192.168.200.43")) })
 				})
 			})

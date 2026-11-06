@@ -55,8 +55,8 @@ var _ = Describe("Pod Reflection Tests", func() {
 				Type:       root.DefaultReflectorsTypes[resources.Pod],
 			}
 			reflector := workload.NewPodReflector(nil, nil,
-				&workload.PodReflectorConfig{forge.APIServerSupportDisabled, false, "", "", fakeAPIServerRemapping([]string{""}), nil,
-					time.Minute}, &reflectorConfig)
+				&workload.PodReflectorConfig{APIServerSupport: forge.APIServerSupportDisabled, KubernetesServiceIPMapper: fakeAPIServerRemapping([]string{""}),
+					StatsSummaryCacheTTL: time.Minute}, &reflectorConfig)
 			Expect(reflector).ToNot(BeNil())
 			Expect(reflector.Reflector).ToNot(BeNil())
 		})
@@ -77,8 +77,8 @@ var _ = Describe("Pod Reflection Tests", func() {
 				Type:       root.DefaultReflectorsTypes[resources.Pod],
 			}
 			reflector := workload.NewPodReflector(nil, metricsFactory,
-				&workload.PodReflectorConfig{forge.APIServerSupportDisabled, false, "", "",
-					fakeAPIServerRemapping([]string{"192.168.200.1", "192.168.200.2"}), &networkingv1beta1.Configuration{
+				&workload.PodReflectorConfig{APIServerSupport: forge.APIServerSupportDisabled,
+					KubernetesServiceIPMapper: fakeAPIServerRemapping([]string{"192.168.200.1", "192.168.200.2"}), NetConfiguration: &networkingv1beta1.Configuration{
 						ObjectMeta: metav1.ObjectMeta{Generation: 1},
 						Spec: networkingv1beta1.ConfigurationSpec{
 							Remote: networkingv1beta1.ClusterConfig{
@@ -104,7 +104,7 @@ var _ = Describe("Pod Reflection Tests", func() {
 								},
 							},
 						},
-					}, time.Minute}, &reflectorConfig)
+					}, StatsSummaryCacheTTL: time.Minute}, &reflectorConfig)
 			kubernetesServiceIPGetter = reflector.KubernetesServiceIPGetter()
 		})
 
@@ -153,8 +153,8 @@ var _ = Describe("Pod Reflection Tests", func() {
 				Type:       root.DefaultReflectorsTypes[resources.Pod],
 			}
 			reflector = workload.NewPodReflector(nil, nil,
-				&workload.PodReflectorConfig{forge.APIServerSupportDisabled, false, "", "", fakeAPIServerRemapping([]string{""}), nil,
-					time.Minute}, &reflectorConfig)
+				&workload.PodReflectorConfig{APIServerSupport: forge.APIServerSupportDisabled, KubernetesServiceIPMapper: fakeAPIServerRemapping([]string{""}),
+					StatsSummaryCacheTTL: time.Minute}, &reflectorConfig)
 
 			opts := options.New(client, factory.Core().V1().Pods()).
 				WithHandlerFactory(FakeEventHandler).
@@ -301,8 +301,8 @@ var _ = Describe("Pod Stats caching", func() {
 			Type:       root.DefaultReflectorsTypes[resources.Pod],
 		}
 		reflector = workload.NewPodReflector(nil, metricsFactory,
-			&workload.PodReflectorConfig{forge.APIServerSupportDisabled, false, "", "", fakeAPIServerRemapping([]string{""}), nil,
-				time.Minute}, &reflectorConfig)
+			&workload.PodReflectorConfig{APIServerSupport: forge.APIServerSupportDisabled, KubernetesServiceIPMapper: fakeAPIServerRemapping([]string{""}),
+				StatsSummaryCacheTTL: time.Minute}, &reflectorConfig)
 		reflector.Start(ctx, options.New(client, factory.Core().V1().Pods()).WithEventBroadcaster(broadcaster))
 		reflector.NewNamespaced(options.NewNamespaced().
 			WithLocal(LocalNamespace, client, factory).WithLiqoLocal(liqoClient, liqoFactory).

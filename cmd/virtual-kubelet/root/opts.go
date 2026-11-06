@@ -61,6 +61,7 @@ var DefaultReflectorsWorkers = map[resources.ResourceReflected]uint{
 	resources.Service:               3,
 	resources.EndpointSlice:         10,
 	resources.Ingress:               3,
+	resources.NetworkPolicy:         3,
 	resources.ConfigMap:             3,
 	resources.Secret:                3,
 	resources.ServiceAccount:        3,
@@ -76,6 +77,7 @@ var DefaultReflectorsTypes = map[resources.ResourceReflected]offloadingv1beta1.R
 	resources.Pod:                   offloadingv1beta1.CustomLiqo,
 	resources.Service:               offloadingv1beta1.DenyList,
 	resources.Ingress:               offloadingv1beta1.DenyList,
+	resources.NetworkPolicy:         offloadingv1beta1.CustomLiqo,
 	resources.ConfigMap:             offloadingv1beta1.DenyList,
 	resources.Secret:                offloadingv1beta1.DenyList,
 	resources.ServiceAccount:        offloadingv1beta1.CustomLiqo,
@@ -103,10 +105,11 @@ type Opts struct {
 	// fallback processing. A zero value disables the delay (immediate re-enqueue).
 	FallbackGracePeriod time.Duration
 
-	HomeCluster         argsutils.ClusterIDFlags
-	ForeignCluster      argsutils.ClusterIDFlags
-	DisableIPReflection bool
-	LocalPodCIDRs       []string
+	HomeCluster             argsutils.ClusterIDFlags
+	ForeignCluster          argsutils.ClusterIDFlags
+	DisableIPReflection     bool
+	NetworkPolicyReflection bool
+	LocalPodCIDRs           []string
 
 	// Sets the addresses to listen for requests from the Kubernetes API server
 	NodeIP          string

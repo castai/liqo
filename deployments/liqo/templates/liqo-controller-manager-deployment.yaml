@@ -129,6 +129,9 @@ spec:
           {{- if .Values.controllerManager.config.enableNodeFailureController }}
           - --enable-node-failure-controller
           {{- end }}
+          {{- if .Values.offloading.reflection.networkpolicy.enabled }}
+          - --enable-network-policy-reflection
+          {{- end }}
           {{- if .Values.networking.denyDirectConnections }}
           - --deny-direct-connections
           {{- end }}
