@@ -431,10 +431,13 @@ offloading:
       # the reflection of ResourceClaims. Reflection is also automatically skipped if the
       # resource.k8s.io/v1 API is not available on either cluster.
       workers: 3
-    # -- List of custom resources to reflect between offloaded namespaces.
+    # -- List of custom resources to reflect between offloaded namespaces (namespaced) or
+    # cluster-wide (cluster-scoped); the scope is auto-detected from the CRD.
     # Spec is synced local→remote and status remote→local (opt-in via statusSync). Default empty (feature off).
     # CRDs must already exist on both clusters; Liqo does not install them.
     # Default reflection type per entry is "AllowList" (annotate instances with liqo.io/allow-reflection: "true").
+    # clusterScoped (default false) only drives the remote RBAC provisioning (cluster-scoped resources need
+    # cluster-wide permissions on the remote cluster); mark as "true" the entries whose CRD is cluster-scoped.
     # WARNING: if consumer is peered with multiple providers serving the offloaded namespace, the reflectors may
     # compete writing the local status, causing infinite reconciles and stress on the API server.
     # Set this to "true" only if you are sure no multiple providers will compete with the status
@@ -444,9 +447,14 @@ offloading:
     # - group: example.io
     #   version: v1
     #   resource: widgets
+    #   clusterScoped: false
     #   workers: 2
     #   type: AllowList
     #   statusSync: false
+    # - group: example.io
+    #   version: v1
+    #   resource: clusters
+    #   clusterScoped: true
     customResources: []
 
 storage:

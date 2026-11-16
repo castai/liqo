@@ -45,7 +45,19 @@ type ReflectorOpts struct {
 	LocalClient      kubernetes.Interface
 	LocalPodInformer corev1informers.PodInformer
 	EventBroadcaster record.EventBroadcaster
-	ForgingOpts      *forge.ForgingOpts
+
+	// LocalDynamicClient and RemoteDynamicClient, together with the cluster-wide dynamic
+	// informer factories, are used by the reflectors of cluster-scoped custom resources.
+	// They are only populated when custom resource reflection is configured.
+	LocalDynamicClient   dynamic.Interface
+	RemoteDynamicClient  dynamic.Interface
+	LocalDynamicFactory  dynamicinformer.DynamicSharedInformerFactory
+	RemoteDynamicFactory dynamicinformer.DynamicSharedInformerFactory
+
+	// ReflectionType and ForgingOpts configure the reflection of cluster-scoped resources,
+	// which is not associated with any namespace pair.
+	ReflectionType offloadingv1beta1.ReflectionType
+	ForgingOpts    *forge.ForgingOpts
 
 	HandlerFactory func(Keyer, ...EventFilter) cache.ResourceEventHandler
 
@@ -84,12 +96,6 @@ func (ro *ReflectorOpts) WithEventBroadcaster(broadcaster record.EventBroadcaste
 	return ro
 }
 
-// WithForgingOpts configures the reflection options of the ReflectorOpts.
-func (ro *ReflectorOpts) WithForgingOpts(opts *forge.ForgingOpts) *ReflectorOpts {
-	ro.ForgingOpts = opts
-	return ro
-}
-
 // WithNamespaceMappedFunc configures the function reporting whether a namespace is currently mapped.
 func (ro *ReflectorOpts) WithNamespaceMappedFunc(mapped func(namespace string) (bool, error)) *ReflectorOpts {
 	ro.NamespaceMapped = mapped
@@ -100,6 +106,34 @@ func (ro *ReflectorOpts) WithNamespaceMappedFunc(mapped func(namespace string) (
 // for fallback processing. A zero value disables the delay (immediate re-enqueue).
 func (ro *ReflectorOpts) WithFallbackGracePeriod(period time.Duration) *ReflectorOpts {
 	ro.FallbackGracePeriod = period
+	return ro
+}
+
+// WithDynamicLocal configures the local dynamic client and informer factory of the ReflectorOpts.
+func (ro *ReflectorOpts) WithDynamicLocal(client dynamic.Interface,
+	factory dynamicinformer.DynamicSharedInformerFactory) *ReflectorOpts {
+	ro.LocalDynamicClient = client
+	ro.LocalDynamicFactory = factory
+	return ro
+}
+
+// WithDynamicRemote configures the remote dynamic client and informer factory of the ReflectorOpts.
+func (ro *ReflectorOpts) WithDynamicRemote(client dynamic.Interface,
+	factory dynamicinformer.DynamicSharedInformerFactory) *ReflectorOpts {
+	ro.RemoteDynamicClient = client
+	ro.RemoteDynamicFactory = factory
+	return ro
+}
+
+// WithReflectionType configures the reflection type of the ReflectorOpts.
+func (ro *ReflectorOpts) WithReflectionType(reflectionType offloadingv1beta1.ReflectionType) *ReflectorOpts {
+	ro.ReflectionType = reflectionType
+	return ro
+}
+
+// WithForgingOpts configures the forging options of the ReflectorOpts.
+func (ro *ReflectorOpts) WithForgingOpts(opts *forge.ForgingOpts) *ReflectorOpts {
+	ro.ForgingOpts = opts
 	return ro
 }
 
