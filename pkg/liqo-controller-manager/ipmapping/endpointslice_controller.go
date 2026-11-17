@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	discoveryv1 "k8s.io/api/discovery/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -25,6 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
@@ -47,6 +49,11 @@ import (
 const (
 	kubernetesServiceName      = "kubernetes"
 	kubernetesServiceNamespace = "default"
+
+	// emptyEndpointsRequeueInterval is the interval after which the reconciler is requeued when the EndpointSlice
+	// advertises no endpoint addresses, in order to periodically re-evaluate the (presumably transient) state
+	// without attempting any stale-pruning (see Reconcile below).
+	emptyEndpointsRequeueInterval = 30 * time.Second
 )
 
 // EndpointSliceIPReconciler reconciles an EndpointSlice and create the corresponding IP resource.
@@ -149,6 +156,14 @@ func (r *EndpointSliceIPReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 	}
 
+	// Never prune when the EndpointSlice advertises no addresses: a temporarily empty endpoint set (e.g., while
+	// the API-server endpoint addresses are being rewritten/moved) would otherwise delete the last API-server IP
+	// mappings, tearing down working connectivity.
+	if len(expectedIPs) == 0 {
+		klog.Infof("EndpointSlice %q advertises no endpoint addresses, skipping stale IP pruning", req.String())
+		return ctrl.Result{RequeueAfter: emptyEndpointsRequeueInterval}, nil
+	}
+
 	var ipList ipamv1alpha1.IPList
 	if err := r.Client.List(ctx, &ipList, client.InNamespace(r.ipNamespace), client.MatchingLabels(commonLabels)); err != nil {
 		return ctrl.Result{}, fmt.Errorf("listing IPs for EndpointSlice %q: %w", req.NamespacedName, err)
@@ -173,17 +188,40 @@ func (r *EndpointSliceIPReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 // SetupWithManager registers the EndpointSliceAPIServerReconciler to the manager.
 // The watch is restricted to EndpointSlices in the specified namespaces targeting the endpointslices
-// with labels matching the labelsSets provided to the reconciler.
+// with labels matching the labelsSets provided to the reconciler. Additionally, the IP resources derived
+// from the watched EndpointSlices are watched: this makes the controller self-healing, as any change to
+// (e.g., a manual or accidental deletion of) a derived IP re-enqueues the owning EndpointSlice reconcile,
+// which re-creates the missing IP as long as the EndpointSlice still advertises its address. Without this
+// watch, a missing IP mapping would go unnoticed until the next EndpointSlice generation change.
 func (r *EndpointSliceIPReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	predicates := predicate.And(
+	epsPredicates := predicate.And(
 		utilpredicates.NewTypedAnyNamespacePredicate[*discoveryv1.EndpointSlice](r.namespacesFilter),
 		utilpredicates.NewTypedAnyLabelsSetPredicate[*discoveryv1.EndpointSlice](r.labelsSetsFilter),
 		predicate.TypedGenerationChangedPredicate[*discoveryv1.EndpointSlice]{})
 
+	ipPredicates := predicate.And(
+		utilpredicates.NewTypedAnyNamespacePredicate[*ipamv1alpha1.IP]([]string{r.ipNamespace}),
+		utilpredicates.NewTypedAnyLabelsSetPredicate[*ipamv1alpha1.IP](
+			[]labels.Set{{consts.IPEndpointSliceNameLabelKey: kubernetesServiceName}}))
+
 	return ctrl.NewControllerManagedBy(mgr).Named(consts.CtrlEndpointSlice).
 		WatchesRawSource(source.Kind(r.Cache, &discoveryv1.EndpointSlice{},
-			&handler.TypedEnqueueRequestForObject[*discoveryv1.EndpointSlice]{}, predicates)).
+			&handler.TypedEnqueueRequestForObject[*discoveryv1.EndpointSlice]{}, epsPredicates)).
+		WatchesRawSource(source.Kind(r.Cache, &ipamv1alpha1.IP{},
+			handler.TypedEnqueueRequestsFromMapFunc[*ipamv1alpha1.IP](r.ipToEndpointSliceRequests), ipPredicates)).
 		Complete(r)
+}
+
+// ipToEndpointSliceRequests maps an IP resource to a reconcile request for the EndpointSlice it was derived
+// from (recorded in the IPEndpointSliceNameLabelKey label), so changes to derived IPs trigger a re-reconcile
+// of the owning EndpointSlice.
+func (r *EndpointSliceIPReconciler) ipToEndpointSliceRequests(_ context.Context, ip *ipamv1alpha1.IP) []ctrl.Request {
+	epsName := ip.GetLabels()[consts.IPEndpointSliceNameLabelKey]
+	if epsName == "" {
+		return nil
+	}
+
+	return []ctrl.Request{{NamespacedName: types.NamespacedName{Namespace: kubernetesServiceNamespace, Name: epsName}}}
 }
 
 func forgeIPname(eps *discoveryv1.EndpointSlice, address string) string {
