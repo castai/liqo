@@ -104,11 +104,27 @@ func (p *LiqoNodeProvider) NotifyNodeStatus(_ context.Context, f func(*corev1.No
 
 // IsTerminating indicates if the node is in terminating (and in the draining phase).
 func (p *LiqoNodeProvider) IsTerminating() bool {
-	klog.Infof("Trying to check if the node is terminating")
 	p.updateMutex.Lock()
 	defer p.updateMutex.Unlock()
-	klog.Infof("Node is terminating: %v", p.terminating)
+
+	klog.V(4).Infof("node %q terminating: %v", p.nodeName, p.terminating)
 	return p.terminating
+}
+
+// syncTerminatingState records whether the VirtualNode managing the node is being deleted. When it is, the node is
+// going to be removed by the virtual node deletion routine: the node controller must not re-create it after a failed
+// status update, otherwise the new object may inherit the lifecycle of the previous one and never be released.
+func (p *LiqoNodeProvider) syncTerminatingState(virtualNode *offloadingv1beta1.VirtualNode) {
+	terminating := !virtualNode.GetDeletionTimestamp().IsZero()
+
+	p.updateMutex.Lock()
+	defer p.updateMutex.Unlock()
+
+	if p.terminating == terminating {
+		return
+	}
+	p.terminating = terminating
+	klog.Infof("node %q terminating state set to %v (virtual node %q)", p.nodeName, terminating, virtualNode.GetName())
 }
 
 // GetNode returns the node managed by the provider.

@@ -47,6 +47,10 @@ func (p *LiqoNodeProvider) reconcileNodeFromVirtualNode(event watch.Event) error
 		return err
 	}
 
+	// Track the deletion of the VirtualNode, so that the node controller does not re-create the node while the
+	// virtual node deletion routine is removing it.
+	p.syncTerminatingState(&virtualNode)
+
 	if err := p.updateFromVirtualNode(ctx, &virtualNode); err != nil {
 		klog.Errorf("node update from VirtualNode %v failed for reason %v; retry...", virtualNode.Name, err)
 		return err
