@@ -188,8 +188,20 @@ func sortNextHops(nextHops []*netlink.NexthopInfo) []*netlink.NexthopInfo {
 
 // CleanRoutes cleans the routes that are not contained in the given route list.
 func CleanRoutes(routes []networkingv1beta1.Route, existing []netlink.Route) error {
+	if len(existing) == 0 {
+		return nil
+	}
+	tableID := uint32(existing[0].Table)
+	desired := make([]*netlink.Route, 0, len(routes))
+	for i := range routes {
+		r, err := forgeNetlinkRoute(&routes[i], tableID)
+		if err != nil {
+			return fmt.Errorf("forging desired route %v: %w", routes[i].Dst, err)
+		}
+		desired = append(desired, r)
+	}
 	for i := range existing {
-		if !IsContainedRoute(&existing[i], routes) {
+		if !IsContainedRoute(&existing[i], desired) {
 			if err := netlink.RouteDel(&existing[i]); err != nil {
 				return err
 			}
@@ -199,13 +211,9 @@ func CleanRoutes(routes []networkingv1beta1.Route, existing []netlink.Route) err
 }
 
 // IsContainedRoute checks if the given route is contained in the route list.
-func IsContainedRoute(route *netlink.Route, routes []networkingv1beta1.Route) bool {
-	for i := range routes {
-		r, err := forgeNetlinkRoute(&routes[i], uint32(route.Table))
-		if err != nil {
-			return false
-		}
-		if IsEqualRoute(route, r) {
+func IsContainedRoute(route *netlink.Route, desired []*netlink.Route) bool {
+	for i := range desired {
+		if IsEqualRoute(route, desired[i]) {
 			return true
 		}
 	}
