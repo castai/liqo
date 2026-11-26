@@ -137,23 +137,44 @@ func ExistsRule(rule *networkingv1beta1.Rule, rules []netlink.Rule) (*netlink.Ru
 	return nil, false, nil
 }
 
+// isDefaultPrefix reports whether the given prefix matches all addresses,
+// i.e. it is the zero-length mask (0.0.0.0/0 or ::/0).
+func isDefaultPrefix(n *net.IPNet) bool {
+	if n == nil {
+		return false
+	}
+	ones, _ := n.Mask.Size()
+	return ones == 0
+}
+
+func equalRuleAddress(spec *networkingv1beta1.CIDR, kernel *net.IPNet) bool {
+	if spec == nil {
+		return kernel == nil || isDefaultPrefix(kernel)
+	}
+	if kernel == nil {
+		// A non-nil spec only matches a missing kernel selector if the spec
+		// itself is an all-addresses prefix.
+		_, parsed, err := net.ParseCIDR(spec.String())
+		return err == nil && isDefaultPrefix(parsed)
+	}
+	_, parsed, err := net.ParseCIDR(spec.String())
+	if err != nil {
+		return false
+	}
+	return parsed.String() == kernel.String()
+}
+
 // RuleIsEqual checks if the given rule is equal to the given netlink rule.
 func RuleIsEqual(rule *networkingv1beta1.Rule, netlinkRule *netlink.Rule) bool {
 	if rule == nil || netlinkRule == nil {
 		return false
 	}
 
-	if rule.Src != nil && netlinkRule.Src != nil && rule.Src.String() != netlinkRule.Src.String() {
-		return false
-	}
-	if rule.Src == nil && netlinkRule.Src != nil {
+	if !equalRuleAddress(rule.Src, netlinkRule.Src) {
 		return false
 	}
 
-	if rule.Dst != nil && netlinkRule.Dst != nil && rule.Dst.String() != netlinkRule.Dst.String() {
-		return false
-	}
-	if rule.Dst == nil && netlinkRule.Dst != nil {
+	if !equalRuleAddress(rule.Dst, netlinkRule.Dst) {
 		return false
 	}
 
@@ -171,6 +192,9 @@ func RuleIsEqual(rule *networkingv1beta1.Rule, netlinkRule *netlink.Rule) bool {
 		return false
 	}
 
+	if rule.FwMark == nil && netlinkRule.Mark != 0 {
+		return false
+	}
 	if rule.FwMark != nil {
 		if *rule.FwMark < 0 || int64(*rule.FwMark) > math.MaxUint32 || uint32(*rule.FwMark) != netlinkRule.Mark {
 			return false

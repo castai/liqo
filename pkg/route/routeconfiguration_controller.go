@@ -114,7 +114,7 @@ func (r *RouteConfigurationReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	// Manage Finalizers and routeconfiguration deletion.
-	deleting := !routeconfiguration.ObjectMeta.DeletionTimestamp.IsZero()
+	deleting := !routeconfiguration.DeletionTimestamp.IsZero()
 	containsFinalizer := ctrlutil.ContainsFinalizer(routeconfiguration, routeconfigurationControllerFinalizer)
 	switch {
 	case !deleting && !containsFinalizer && r.EnableFinalizer:
@@ -153,9 +153,6 @@ func (r *RouteConfigurationReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("listing existing rules: %w", err)
 	}
-	if err = CleanRules(routeconfiguration.Spec.Table.Rules, existingRules); err != nil {
-		return ctrl.Result{}, fmt.Errorf("cleaning rules: %w", err)
-	}
 
 	existingRoutes, err := GetRoutesByTableID(tableID)
 	if err != nil {
@@ -168,9 +165,6 @@ func (r *RouteConfigurationReconciler) Reconcile(ctx context.Context, req ctrl.R
 		// This is necessary because we can't list the route rules filtering per rule.
 		allRoutes = append(allRoutes, routeconfiguration.Spec.Table.Rules[i].Routes...)
 	}
-	if err = CleanRoutes(allRoutes, existingRoutes); err != nil {
-		return ctrl.Result{}, fmt.Errorf("cleaning routes: %w", err)
-	}
 
 	klog.V(4).Infof("Applying routeconfiguration %s", req.String())
 
@@ -178,11 +172,7 @@ func (r *RouteConfigurationReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, fmt.Errorf("ensuring table presence: %w", err)
 	}
 
-	// existingRules/existingRoutes were snapshotted before CleanRules/CleanRoutes ran, so they no
-	// longer reflect kernel state. Reusing them here is still correct: Clean only deletes entries
-	// NOT in the desired spec, while Ensure*Presence only looks up entries that ARE in the desired
-	// spec, so the two never operate on the same rows and the stale snapshot cannot cause a wrong
-	// exists/not-exists result. Re-fetching here would just be a redundant netlink list.
+	// Ensure rules/routes phase.
 	for i := range routeconfiguration.Spec.Table.Rules {
 		if err = EnsureRulePresence(&routeconfiguration.Spec.Table.Rules[i], tableID, existingRules); err != nil {
 			return ctrl.Result{}, fmt.Errorf("ensuring rule presence: %w", err)
@@ -198,6 +188,23 @@ func (r *RouteConfigurationReconciler) Reconcile(ctx context.Context, req ctrl.R
 			}
 			return ctrl.Result{}, fmt.Errorf("ensuring routes presence: %w", err)
 		}
+	}
+
+	// Cleanup dangling routes/rules phase.
+	currentRules, err := GetRulesByTableID(tableID)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("listing current rules: %w", err)
+	}
+	if err = CleanRules(routeconfiguration.Spec.Table.Rules, currentRules); err != nil {
+		return ctrl.Result{}, fmt.Errorf("cleaning rules: %w", err)
+	}
+
+	currentRoutes, err := GetRoutesByTableID(tableID)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("listing current routes: %w", err)
+	}
+	if err = CleanRoutes(allRoutes, currentRoutes); err != nil {
+		return ctrl.Result{}, fmt.Errorf("cleaning routes: %w", err)
 	}
 
 	klog.Infof("Applied routeconfiguration %s", req.String())
@@ -230,12 +237,12 @@ func (r *RouteConfigurationReconciler) SetupWithManager(ctx context.Context, mgr
 }
 
 // flushStaleRules attempts to flush kernel state when a RouteConfiguration is not found.
-// This handles the edge case where the object was deleted before the reconciler could run
-// The table name is inferred from the object name by stripping known suffixes.
+// This handles the edge case where the object was deleted before the reconciler could run.
 func (r *RouteConfigurationReconciler) flushStaleRules(name string) {
-	tableName := name
-	tableName = strings.TrimSuffix(tableName, "-gw-node")
-	tableName = strings.TrimSuffix(tableName, "-gw-ext")
+	tableName, err := tableNameFromRouteConfigurationName(name)
+	if err != nil {
+		return
+	}
 
 	tableID, err := GetTableID(tableName)
 	if err != nil {
@@ -253,6 +260,18 @@ func (r *RouteConfigurationReconciler) flushStaleRules(name string) {
 	if err := EnsureTableAbsence(tableID); err != nil {
 		klog.Warningf("optimistic cleanup: failed to remove table %d (name %q): %v", tableID, tableName, err)
 	}
+}
+
+func tableNameFromRouteConfigurationName(name string) (string, error) {
+	if name == "" {
+		return "", fmt.Errorf("routeconfiguration name is empty")
+	}
+	tableName := strings.TrimSuffix(name, "-gw-node")
+	tableName = strings.TrimSuffix(tableName, "-gw-ext")
+	if tableName == "" {
+		return "", fmt.Errorf("routeconfiguration name %q has no table name part", name)
+	}
+	return tableName, nil
 }
 
 func getConditionRef(rcfg *networkingv1beta1.RouteConfiguration, podname string) *networkingv1beta1.RouteConfigurationStatusCondition {
