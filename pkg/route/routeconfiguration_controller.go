@@ -114,7 +114,7 @@ func (r *RouteConfigurationReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	// Manage Finalizers and routeconfiguration deletion.
-	deleting := !routeconfiguration.ObjectMeta.DeletionTimestamp.IsZero()
+	deleting := !routeconfiguration.DeletionTimestamp.IsZero()
 	containsFinalizer := ctrlutil.ContainsFinalizer(routeconfiguration, routeconfigurationControllerFinalizer)
 	switch {
 	case !deleting && !containsFinalizer && r.EnableFinalizer:
@@ -237,7 +237,7 @@ func (r *RouteConfigurationReconciler) SetupWithManager(ctx context.Context, mgr
 }
 
 // flushStaleRules attempts to flush kernel state when a RouteConfiguration is not found.
-// This handles the edge case where the object was deleted before the reconciler could run
+// This handles the edge case where the object was deleted before the reconciler could run.
 func (r *RouteConfigurationReconciler) flushStaleRules(name string) {
 	tableName, err := tableNameFromRouteConfigurationName(name)
 	if err != nil {

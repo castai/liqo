@@ -120,7 +120,7 @@ func (e *testEnvironment) rules() ([]netlink.Rule, error) {
 
 // forgeRouteConfiguration builds a RouteConfiguration with a single rule
 // routing all destinations through the given device.
-func forgeRouteConfiguration(name, namespace, tableName, dev string, dsts ...string) *networkingv1beta1.RouteConfiguration {
+func forgeRouteConfiguration(name, tableName, dev string, dsts ...string) *networkingv1beta1.RouteConfiguration {
 	routes := make([]networkingv1beta1.Route, 0, len(dsts))
 	for _, dst := range dsts {
 		routes = append(routes, networkingv1beta1.Route{
@@ -130,7 +130,7 @@ func forgeRouteConfiguration(name, namespace, tableName, dev string, dsts ...str
 		})
 	}
 	return &networkingv1beta1.RouteConfiguration{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
 		Spec: networkingv1beta1.RouteConfigurationSpec{
 			Table: networkingv1beta1.Table{
 				Name: tableName,
@@ -189,17 +189,17 @@ func collectRouteEvents(t *testing.T, tableID uint32, run func()) routeEvents {
 	go func() {
 		defer close(collected)
 		for update := range ch {
-			if update.Route.Table != int(tableID) {
+			if update.Table != int(tableID) {
 				continue
 			}
-			if update.Route.Dst == nil {
+			if update.Dst == nil {
 				continue
 			}
 			switch update.Type {
 			case unix.RTM_NEWROUTE:
-				events.added[update.Route.Dst.String()] = true
+				events.added[update.Dst.String()] = true
 			case unix.RTM_DELROUTE:
-				events.deleted[update.Route.Dst.String()] = true
+				events.deleted[update.Dst.String()] = true
 			}
 		}
 	}()
@@ -222,7 +222,7 @@ func TestReconcileMakeBeforeBreak(t *testing.T) {
 	env.addRoute(t, testRouteChangedDst, env.linkA)
 	env.addRoute(t, testRouteRemovedDst, env.linkA)
 
-	rc := forgeRouteConfiguration("test-mbb", "default", env.tableName, testLinkB, testRouteChangedDst)
+	rc := forgeRouteConfiguration("test-mbb", env.tableName, testLinkB, testRouteChangedDst)
 
 	events := collectRouteEvents(t, env.tableID, func() {
 		runReconcile(t, rc)
@@ -266,7 +266,7 @@ func TestReconcileRemoveStaleRoutes(t *testing.T) {
 	env.addRoute(t, testRouteRemovedDst, env.linkA)
 
 	// The spec no longer contains the removed destination.
-	rc := forgeRouteConfiguration("test-remove", "default", env.tableName, testLinkA, testRouteChangedDst)
+	rc := forgeRouteConfiguration("test-remove", env.tableName, testLinkA, testRouteChangedDst)
 	runReconcile(t, rc)
 
 	routes, err := env.routes()
@@ -291,7 +291,7 @@ func TestReconcileReplaceStaleRule(t *testing.T) {
 	}
 
 	// Desired rule: same priority, wider destination, routing through link A.
-	rc := forgeRouteConfiguration("test-rule", "default", env.tableName, testLinkA, testTableMarkerRange)
+	rc := forgeRouteConfiguration("test-rule", env.tableName, testLinkA, testTableMarkerRange)
 	rc.Spec.Table.Rules[0].Dst = mustCIDR(testRuleNewDst)
 	runReconcile(t, rc)
 
@@ -320,7 +320,7 @@ func TestReconcileReplaceStaleRule(t *testing.T) {
 func TestReconcileIdempotent(t *testing.T) {
 	env := newTestEnvironment(t)
 
-	rc := forgeRouteConfiguration("test-idempotent", "default", env.tableName, testLinkA, testRouteChangedDst)
+	rc := forgeRouteConfiguration("test-idempotent", env.tableName, testLinkA, testRouteChangedDst)
 	runReconcile(t, rc)
 
 	events := collectRouteEvents(t, env.tableID, func() {
