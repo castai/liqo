@@ -191,7 +191,7 @@ func CleanRoutes(routes []networkingv1beta1.Route, existing []netlink.Route) err
 	if len(existing) == 0 {
 		return nil
 	}
-	tableID := uint32(existing[0].Table) //nolint:gosec
+	tableID := uint32(existing[0].Table) //nolint:gosec // overflow should not happen
 	desired := make([]*netlink.Route, 0, len(routes))
 	for i := range routes {
 		r, err := forgeNetlinkRoute(&routes[i], tableID)
