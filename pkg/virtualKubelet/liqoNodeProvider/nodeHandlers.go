@@ -44,8 +44,6 @@ func (p *LiqoNodeProvider) HandleNodeStatusUpdateError(ctx context.Context, _ er
 		os.Exit(1)
 	}
 
-	newNode.ResourceVersion = ""
-
 	if p.IsTerminating() {
 		// This avoids the re-creation of terminated nodes.
 		klog.Info("skipping: node is in terminating phase")
@@ -79,7 +77,7 @@ func (p *LiqoNodeProvider) HandleNodeStatusUpdateError(ctx context.Context, _ er
 }
 
 func (p *LiqoNodeProvider) createNode(ctx context.Context, node *corev1.Node) error {
-	created, err := p.localClient.CoreV1().Nodes().Create(ctx, node, metav1.CreateOptions{})
+	created, err := p.localClient.CoreV1().Nodes().Create(ctx, stripInheritedFields(node), metav1.CreateOptions{})
 	if err != nil {
 		klog.Errorf("Failed to create node %q: %v", node.GetName(), err)
 		return err
@@ -92,4 +90,22 @@ func (p *LiqoNodeProvider) createNode(ctx context.Context, node *corev1.Node) er
 	}
 
 	return nil
+}
+
+// stripInheritedFields returns a copy of the given node without the fields inherited from the previous incarnation
+// of the object (UID, resource version, finalizers, deletion timestamp...). Only what describes the node itself
+// (name, labels, annotations, spec, status) is preserved, so that re-creating a node whose object has been deleted
+// does not resurrect a lifecycle owned by the API server or by other actors (e.g. a finalizer added by an external
+// controller, that would stick to the re-created node and that nobody would remove anymore).
+func stripInheritedFields(node *corev1.Node) *corev1.Node {
+	return &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        node.GetName(),
+			Namespace:   node.GetNamespace(),
+			Labels:      node.GetLabels(),
+			Annotations: node.GetAnnotations(),
+		},
+		Spec:   *node.Spec.DeepCopy(),
+		Status: *node.Status.DeepCopy(),
+	}
 }

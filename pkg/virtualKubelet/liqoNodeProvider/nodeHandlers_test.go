@@ -30,6 +30,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/utils/ptr"
 
+	offloadingv1beta1 "github.com/liqotech/liqo/apis/offloading/v1beta1"
 	"github.com/liqotech/liqo/pkg/utils/testutil"
 )
 
@@ -113,6 +114,72 @@ var _ = Describe("NodeHandlers", func() {
 
 		_, err = client.StorageV1().CSINodes().Get(ctx, nodeName, metav1.GetOptions{})
 		Expect(apierrors.IsNotFound(err)).To(BeTrue())
+	})
+
+	It("Should consider the node terminating while the virtual node is being deleted", func() {
+		virtualNode := &offloadingv1beta1.VirtualNode{ObjectMeta: metav1.ObjectMeta{Name: nodeName}}
+		nodeProvider.syncTerminatingState(virtualNode)
+		Expect(nodeProvider.IsTerminating()).To(BeFalse())
+
+		virtualNode.SetDeletionTimestamp(ptr.To(metav1.Now()))
+		nodeProvider.syncTerminatingState(virtualNode)
+		Expect(nodeProvider.IsTerminating()).To(BeTrue())
+
+		Expect(nodeProvider.HandleNodeStatusUpdateError(ctx, errors.New("node not found"))).To(Succeed())
+		_, err := client.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
+		Expect(apierrors.IsNotFound(err)).To(BeTrue())
+
+		virtualNode.SetDeletionTimestamp(nil)
+		nodeProvider.syncTerminatingState(virtualNode)
+		Expect(nodeProvider.IsTerminating()).To(BeFalse())
+	})
+
+	It("Should re-create the node when it is deleted while the virtual node is not being deleted", func() {
+		// The node lifecycle follows the VirtualNode: a node deleted by someone else must be restored.
+		nodeProvider.node.SetDeletionTimestamp(ptr.To(metav1.Now()))
+		Expect(nodeProvider.IsTerminating()).To(BeFalse())
+
+		Expect(nodeProvider.HandleNodeStatusUpdateError(ctx, errors.New("node not found"))).To(Succeed())
+
+		node, err := client.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(node.GetDeletionTimestamp()).To(BeNil())
+	})
+
+	It("Should not re-create the node with the finalizers added by other controllers", func() {
+		previousNode, err := client.CoreV1().Nodes().Create(ctx, nodeProvider.GetNode(), metav1.CreateOptions{})
+		Expect(err).ToNot(HaveOccurred())
+
+		// An external controller protects the node with a finalizer of its own.
+		previousNode.SetFinalizers(append(previousNode.GetFinalizers(), "external-controller.example.com/node-protection"))
+		previousNode, err = client.CoreV1().Nodes().Update(ctx, previousNode, metav1.UpdateOptions{})
+		Expect(err).ToNot(HaveOccurred())
+
+		// The provider keeps the last observed version of the node in memory (the object is deep-copied, as the
+		// provider holds its own snapshot and the test keeps mutating the API server object below).
+		nodeProvider.updateMutex.Lock()
+		nodeProvider.node = previousNode.DeepCopy()
+		nodeProvider.updateMutex.Unlock()
+
+		// The external controller releases the finalizer and the node is actually deleted.
+		released := previousNode.DeepCopy()
+		released.SetFinalizers(nil)
+		_, err = client.CoreV1().Nodes().Update(ctx, released, metav1.UpdateOptions{})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(client.CoreV1().Nodes().Delete(ctx, nodeName, metav1.DeleteOptions{})).To(Succeed())
+		Eventually(func() bool {
+			_, err := client.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
+			return apierrors.IsNotFound(err)
+		}, timeout, interval).Should(BeTrue())
+
+		// The missing node is re-created on the next failed status update, without inheriting the finalizer above.
+		Expect(nodeProvider.HandleNodeStatusUpdateError(ctx, errors.New("node not found"))).To(Succeed())
+
+		node, err := client.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(node.GetUID()).ToNot(Equal(previousNode.GetUID()))
+		Expect(node.GetFinalizers()).To(BeEmpty())
+		Expect(node.GetLabels()).To(HaveKeyWithValue(corev1.LabelHostname, nodeName))
 	})
 
 	It("Should return an error if the node is created but its CSINode cannot be set up", func() {
