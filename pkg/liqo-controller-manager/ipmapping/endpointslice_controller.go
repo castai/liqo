@@ -199,10 +199,14 @@ func (r *EndpointSliceIPReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		utilpredicates.NewTypedAnyLabelsSetPredicate[*discoveryv1.EndpointSlice](r.labelsSetsFilter),
 		predicate.TypedGenerationChangedPredicate[*discoveryv1.EndpointSlice]{})
 
+	// Watch for the IPs generated from an endpointslice.
 	ipPredicates := predicate.And(
 		utilpredicates.NewTypedAnyNamespacePredicate[*ipamv1alpha1.IP]([]string{r.ipNamespace}),
-		utilpredicates.NewTypedAnyLabelsSetPredicate[*ipamv1alpha1.IP](
-			[]labels.Set{{consts.IPEndpointSliceNameLabelKey: kubernetesServiceName}}))
+		predicate.NewTypedPredicateFuncs(func(ip *ipamv1alpha1.IP) bool {
+			_, ok := ip.GetLabels()[consts.IPEndpointSliceNameLabelKey]
+			return ok
+		}),
+		predicate.TypedGenerationChangedPredicate[*ipamv1alpha1.IP]{})
 
 	return ctrl.NewControllerManagedBy(mgr).Named(consts.CtrlEndpointSlice).
 		WatchesRawSource(source.Kind(r.Cache, &discoveryv1.EndpointSlice{},

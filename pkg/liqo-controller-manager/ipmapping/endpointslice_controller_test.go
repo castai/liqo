@@ -61,10 +61,11 @@ func kubernetesEndpointSlice(addresses ...string) *discoveryv1.EndpointSlice {
 	}
 }
 
-func apiServerIP(name, addr string) *ipamv1alpha1.IP {
+// apiServerIP returns the IP mapping derived from the kubernetes EndpointSlice.
+func apiServerIP() *ipamv1alpha1.IP {
 	return &ipamv1alpha1.IP{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
+			Name:      "kubernetes-172-23-0-2",
 			Namespace: testIPNamespace,
 			Labels: map[string]string{
 				consts.IPEndpointSliceNameLabelKey: kubernetesServiceName,
@@ -72,7 +73,7 @@ func apiServerIP(name, addr string) *ipamv1alpha1.IP {
 			},
 		},
 		Spec: ipamv1alpha1.IPSpec{
-			IP:         networkingv1beta1.IP(addr),
+			IP:         networkingv1beta1.IP("172.23.0.2"),
 			Masquerade: ptr.To(true),
 		},
 	}
@@ -132,7 +133,7 @@ func TestEndpointSliceIPReconcilerRecreatesMissingMapping(t *testing.T) {
 	g.Expect(err).NotTo(HaveOccurred())
 
 	// Simulate the mapping being removed (manual/accidental deletion, or a previous stale-prune).
-	ip := apiServerIP("kubernetes-172-23-0-2", "172.23.0.2")
+	ip := apiServerIP()
 	g.Expect(cl.Delete(ctx, ip)).To(Succeed())
 
 	// The reconcile triggered by the IP deletion event must recreate it.
@@ -155,7 +156,7 @@ func TestEndpointSliceIPReconcilerSkipsPruningWhenEndpointsEmpty(t *testing.T) {
 	// API-server mapping tears down working connectivity and is not self-healed by EPS events alone.
 	r, cl := newReconciler(t,
 		kubernetesEndpointSlice(),
-		apiServerIP("kubernetes-172-23-0-2", "172.23.0.2"),
+		apiServerIP(),
 	)
 
 	res, err := r.Reconcile(ctx, endpointSliceRequest)
@@ -171,16 +172,18 @@ func TestEndpointSliceIPReconcilerPrunesWhenAddressChanges(t *testing.T) {
 	g := NewWithT(t)
 	ctx := context.Background()
 
+	staleIP := apiServerIP()
+	// The EndpointSlice now advertises a different address, so the pre-existing mapping is stale.
 	r, cl := newReconciler(t,
 		kubernetesEndpointSlice("172.23.0.3"),
-		apiServerIP("kubernetes-172-23-0-2", "172.23.0.2"),
+		staleIP,
 	)
 
 	_, err := r.Reconcile(ctx, endpointSliceRequest)
 	g.Expect(err).NotTo(HaveOccurred())
 
-	var stale ipamv1alpha1.IP
-	err = cl.Get(ctx, types.NamespacedName{Namespace: testIPNamespace, Name: "kubernetes-172-23-0-2"}, &stale)
+	var pruned ipamv1alpha1.IP
+	err = cl.Get(ctx, types.NamespacedName{Namespace: testIPNamespace, Name: staleIP.Name}, &pruned)
 	g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "stale mapping must be pruned when a different address is advertised")
 
 	var created ipamv1alpha1.IP
@@ -194,7 +197,7 @@ func TestIPToEndpointSliceRequests(t *testing.T) {
 	ctx := context.Background()
 	r, _ := newReconciler(t)
 
-	g.Expect(r.ipToEndpointSliceRequests(ctx, apiServerIP("kubernetes-172-23-0-2", "172.23.0.2"))).
+	g.Expect(r.ipToEndpointSliceRequests(ctx, apiServerIP())).
 		To(Equal([]ctrl.Request{endpointSliceRequest}))
 	g.Expect(r.ipToEndpointSliceRequests(ctx, &ipamv1alpha1.IP{ObjectMeta: metav1.ObjectMeta{
 		Name:      "unrelated",
